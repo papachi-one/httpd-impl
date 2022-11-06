@@ -1,0 +1,7 @@
+package one.papachi.httpd.impl.http.http2;
+
+public enum Http2Setting {
+
+    UNSPECIFIED, HEADER_TABLE_SIZE, ENABLE_PUSH, MAX_CONCURRENT_STREAMS, INITIAL_WINDOW_SIZE, MAX_FRAME_SIZE, MAX_HEADER_LIST_SIZE
+
+}
