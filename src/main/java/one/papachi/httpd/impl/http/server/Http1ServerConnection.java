@@ -13,7 +13,6 @@ import one.papachi.httpd.impl.http.DefaultHttpBody;
 import one.papachi.httpd.impl.http.DefaultHttpHeader;
 import one.papachi.httpd.impl.http.DefaultHttpRequest;
 import one.papachi.httpd.impl.http.HttpRequestBodyChannel;
-import one.papachi.httpd.impl.http.client.DefaultHttpClient;
 import one.papachi.httpd.impl.net.AsynchronousBufferedSocketChannel;
 import one.papachi.httpd.impl.websocket.DefaultWebSocketConnection;
 
@@ -30,10 +29,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-public class DefaultHttpConnection implements HttpConnection, Runnable {
+public class Http1ServerConnection implements HttpConnection, Runnable {
 
     enum State {
-        READ, READ_CHUNK_SIZE, READ_REQUEST, READ_REQUEST_LINE, READ_HEADER_LINE, READ_BODY, PROCESS_REQUEST, CLOSED, BREAK, ERROR,
+        READ, READ_CHUNK_SIZE, READ_REQUEST, READ_REQUEST_LINE, READ_HEADER_LINE, READ_BODY, PROCESS_REQUEST, BREAK, ERROR,
     }
 
     private static final byte[] CRLF = new byte[]{'\r', '\n'};
@@ -52,7 +51,7 @@ public class DefaultHttpConnection implements HttpConnection, Runnable {
     protected HttpRequestBodyChannel bodyChannel;
     protected HttpResponse response;
 
-    public DefaultHttpConnection(HttpServer server, AsynchronousSocketChannel channel) {
+    public Http1ServerConnection(HttpServer server, AsynchronousSocketChannel channel) {
         this.server = server;
         this.channel = channel;
         this.readBuffer = ByteBuffer.allocate(server.getOption(StandardHttpOptions.READ_BUFFER_SIZE)).flip();
@@ -75,25 +74,36 @@ public class DefaultHttpConnection implements HttpConnection, Runnable {
 
     @Override
     public void run() {
-        while (state != State.BREAK && state != State.CLOSED) {
-            state = switch (state) {
-                case READ -> read();
-                case READ_CHUNK_SIZE -> readChunkSize();
-                case READ_REQUEST -> readRequest();
-                case READ_REQUEST_LINE -> readRequestLine();
-                case READ_HEADER_LINE -> readHeaderLine();
-                case PROCESS_REQUEST -> processRequest();
-                case READ_BODY -> readBody();
-                case ERROR -> close();
-                default -> State.ERROR;
-            };
+        while (true) {
+            if (state == State.READ) {
+                if (readBuffer.hasRemaining()) {
+                    state = isChunked ? State.READ_CHUNK_SIZE : resumeState;
+                } else {
+                    state = State.BREAK;
+                    read();
+                    break;
+                }
+            } else if (state == State.READ_CHUNK_SIZE) {
+                state = readChunkSize();
+            } else if (state == State.READ_REQUEST) {
+                state = readRequest();
+            } else if (state == State.READ_REQUEST_LINE) {
+                state = readRequestLine();
+            } else if (state == State.READ_HEADER_LINE) {
+                state = readHeaderLine();
+            } else if (state == State.PROCESS_REQUEST) {
+                state = processRequest();
+            } else if (state == State.READ_BODY) {
+                state = readBody();
+            } else if (state == State.ERROR) {
+                state = close();
+            }
+            if (state == State.BREAK)
+                break;
         }
     }
 
     protected State read() {
-        if (readBuffer.hasRemaining()) {
-            return isChunked ? State.READ_CHUNK_SIZE : resumeState;
-        }
         channel.read(readBuffer.compact(), null, new CompletionHandler<Integer, Void>() {
             @Override
             public void completed(Integer result, Void attachment) {
@@ -217,7 +227,7 @@ public class DefaultHttpConnection implements HttpConnection, Runnable {
             String secWebSocketVersion = request.getHeaderValue("Sec-WebSocket-Version");
             if (upgrade != null && connection != null && secWebSocketKey != null & secWebSocketKey != null && upgrade.equalsIgnoreCase("websocket") && connection.equalsIgnoreCase("upgrade") && secWebSocketVersion.equals("13") && secWebSocketKey != null && !secWebSocketKey.isEmpty()) {
                 byte[] response = ("HTTP/1.1 101 Switching Protocols\r\nConnection: upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: " + getSecWebSocketAccept(secWebSocketKey) + "\r\n\r\n").getBytes(StandardCharsets.US_ASCII);
-                write(ByteBuffer.wrap(response), ignore -> new DefaultWebSocketConnection(server, channel, readBuffer));
+                write(ByteBuffer.wrap(response), ignore -> new DefaultWebSocketConnection(DefaultWebSocketConnection.Mode.SERVER, server, channel, readBuffer));
                 return State.BREAK;
             }
         }
@@ -264,7 +274,7 @@ public class DefaultHttpConnection implements HttpConnection, Runnable {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        return State.CLOSED;
+        return State.BREAK;
     }
 
     protected void handleResponse(HttpResponse response, Throwable t) {

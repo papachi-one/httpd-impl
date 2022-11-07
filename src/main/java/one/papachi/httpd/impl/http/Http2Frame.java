@@ -1,4 +1,4 @@
-package one.papachi.httpd.impl.http.http2;
+package one.papachi.httpd.impl.http;
 
 import java.nio.ByteBuffer;
 

@@ -1,4 +1,4 @@
-package one.papachi.httpd.impl.http.http2;
+package one.papachi.httpd.impl.http;
 
 
 import one.papachi.httpd.impl.CustomDataBuffer;
@@ -18,17 +18,21 @@ import java.util.function.Function;
 
 public class Http2ConnectionIO implements Runnable {
 
+    public enum Mode {
+        CLIENT, SERVER
+    }
+
     public enum State {
-        READ, READ_MAGIC, READ_FRAME_HEADER, READ_FRAME_PAYLOAD, PROCESS_FRAME, ERROR, CLOSED, BREAK
+        READ, READ_MAGIC, READ_FRAME_HEADER, READ_FRAME_PAYLOAD, PROCESS_FRAME, ERROR, BREAK
     }
 
     protected final AsynchronousSocketChannel channel;
     protected final ByteBuffer readBuffer;
     protected final Function<Http2Frame, State> listener;
     protected final int maxFrameSize;
-    protected State state = State.READ_MAGIC, resumeState;
-    protected CustomDataBuffer osBuffer;
-    protected int length, counter;
+    protected volatile State state, resumeState;
+    protected volatile CustomDataBuffer osBuffer;
+    protected volatile int length, counter;
 
     private volatile Http2FrameHeader frameHeader;
     private volatile Http2Frame frame;
@@ -40,11 +44,16 @@ public class Http2ConnectionIO implements Runnable {
 
     protected final AtomicReference<Boolean> amIWriting = new AtomicReference<>(false);
 
-    public Http2ConnectionIO(AsynchronousSocketChannel channel, Http2Settings localSettings, Function<Http2Frame, State> listener) {
+    public Http2ConnectionIO(Mode mode, AsynchronousSocketChannel channel, Http2Settings localSettings, Function<Http2Frame, State> listener) {
         this.channel = channel;
         this.readBuffer = ByteBuffer.allocate(localSettings.getMaxFrameSize()).flip();
         this.listener = listener;
         this.maxFrameSize = localSettings.getMaxFrameSize();
+        run(mode == Mode.SERVER ? State.READ_MAGIC : State.READ_FRAME_HEADER);
+    }
+
+    public ByteBuffer getReadBuffer() {
+        return readBuffer;
     }
 
     private void run(State state) {
@@ -54,16 +63,28 @@ public class Http2ConnectionIO implements Runnable {
 
     @Override
     public void run() {
-        while (state != State.BREAK && state != State.CLOSED) {
-            state = switch (state) {
-                case READ -> read();
-                case READ_MAGIC -> readMagic();
-                case READ_FRAME_HEADER -> readFrameHeader();
-                case READ_FRAME_PAYLOAD -> readFramePayload();
-                case PROCESS_FRAME -> processFrame();
-                case ERROR -> close();
-                default -> State.ERROR;
-            };
+        while (true) {
+            if (state == State.READ) {
+                if (readBuffer.hasRemaining()) {
+                    state = resumeState;
+                } else {
+                    state = State.BREAK;
+                    read();
+                    break;
+                }
+            } else if (state == State.READ_MAGIC) {
+                state = readMagic();
+            } else if (state == State.READ_FRAME_HEADER) {
+                state = readFrameHeader();
+            } else if (state == State.READ_FRAME_PAYLOAD) {
+                state = readFramePayload();
+            } else if (state == State.PROCESS_FRAME) {
+                state = processFrame();
+            } else if (state == State.ERROR) {
+                state = close();
+            }
+            if (state == State.BREAK)
+                break;
         }
     }
 
@@ -105,7 +126,6 @@ public class Http2ConnectionIO implements Runnable {
             if (!equals) {
                 return State.ERROR;
             }
-//            sendInitialSettings(); TODO
             return State.READ_FRAME_HEADER;
         }
         resumeState = State.READ_MAGIC;
@@ -129,8 +149,7 @@ public class Http2ConnectionIO implements Runnable {
             frameHeader = new Http2FrameHeader(data);
             length = frameHeader.getLength();
             if (length > maxFrameSize) {
-//                error = Http2Error.FRAME_SIZE_ERROR;
-                return State.ERROR;
+                return State.ERROR;// error = Http2Error.FRAME_SIZE_ERROR;
             }
             return State.READ_FRAME_PAYLOAD;
         }
@@ -163,7 +182,7 @@ public class Http2ConnectionIO implements Runnable {
     }
 
     private State close() {
-        return State.CLOSED;
+        return State.BREAK;
     }
 
     public void write(ByteBuffer... buffers) {

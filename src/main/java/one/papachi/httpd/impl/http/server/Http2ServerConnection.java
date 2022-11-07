@@ -1,4 +1,4 @@
-package one.papachi.httpd.impl.http.http2.server;
+package one.papachi.httpd.impl.http.server;
 
 
 import one.papachi.httpd.api.http.HttpBody;
@@ -11,12 +11,12 @@ import one.papachi.httpd.impl.hpack.Decoder;
 import one.papachi.httpd.impl.hpack.Encoder;
 import one.papachi.httpd.impl.http.DefaultHttpBody;
 import one.papachi.httpd.impl.http.DefaultHttpRequest;
-import one.papachi.httpd.impl.http.http2.Http2RequestBodyChannel;
-import one.papachi.httpd.impl.http.http2.Http2AsynchronousByteChannel;
-import one.papachi.httpd.impl.http.http2.Http2ConnectionIO;
-import one.papachi.httpd.impl.http.http2.Http2Frame;
-import one.papachi.httpd.impl.http.http2.Http2Setting;
-import one.papachi.httpd.impl.http.http2.Http2Settings;
+import one.papachi.httpd.impl.http.Http2ConnectionIO;
+import one.papachi.httpd.impl.http.Http2RemoteBodyChannel;
+import one.papachi.httpd.impl.http.Http2LocalBodyChannel;
+import one.papachi.httpd.impl.http.Http2Frame;
+import one.papachi.httpd.impl.http.Http2Setting;
+import one.papachi.httpd.impl.http.Http2Settings;
 import one.papachi.httpd.impl.net.AsynchronousBufferedSocketChannel;
 
 import java.io.ByteArrayInputStream;
@@ -26,6 +26,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -35,7 +36,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-public class DefaultHttp2Connection implements HttpConnection, Runnable {
+public class Http2ServerConnection implements HttpConnection {
 
     private final HttpServer server;
     private final AsynchronousSocketChannel channel;
@@ -51,16 +52,16 @@ public class DefaultHttp2Connection implements HttpConnection, Runnable {
     private final Map<Integer, Integer> consumedWindowSizes = new HashMap<>();
     private final Map<Integer, Integer> receiveWindowSizes = new HashMap<>();
     private final Map<Integer, Integer> sendWindowSizes = new HashMap<>();
-    private final Map<Integer, Http2RequestBodyChannel> requestBodyChannels = new HashMap<>();
+    private final Map<Integer, Http2RemoteBodyChannel> requestBodyChannels = Collections.synchronizedMap(new HashMap<>());
     private final Http2ConnectionIO io;
-    protected HttpRequest.Builder requestBuilder;
+    protected volatile HttpRequest.Builder requestBuilder;
     protected volatile boolean isEndStream;
 
-
-    public DefaultHttp2Connection(HttpServer server, AsynchronousSocketChannel channel) {
+    public Http2ServerConnection(HttpServer server, AsynchronousSocketChannel channel) {
         this.server = server;
         this.channel = channel;
-        io = new Http2ConnectionIO(channel, localSettings, this::handleFrame);
+        io = new Http2ConnectionIO(Http2ConnectionIO.Mode.SERVER, channel, localSettings, this::handleFrame);
+        sendInitialSettings();
     }
 
     @Override
@@ -70,28 +71,27 @@ public class DefaultHttp2Connection implements HttpConnection, Runnable {
 
     @Override
     public AsynchronousSocketChannel getSocketChannel() {
-        return new AsynchronousBufferedSocketChannel(channel, io.readBuffer);
-    }
-
-    @Override
-    public void run() {
-        sendInitialSettings();
-        io.run();
+        return new AsynchronousBufferedSocketChannel(channel, io.getReadBuffer());
     }
 
     private Http2ConnectionIO.State handleFrame(Http2Frame frame) {
-        return switch (frame.getHeader().getType()) {
-            case DATA -> processData(frame);
-            case HEADERS -> processHeaders(frame);
-            case PRIORITY -> processPriority(frame);
-            case RST_STREAM -> processRstStream(frame);
-            case SETTINGS -> processSettings(frame);
-            case PUSH_PROMISE -> processPushPromise(frame);
-            case PING -> processPing(frame);
-            case GOAWAY -> processGoAway(frame);
-            case WINDOW_UPDATE -> processWindowUpdate(frame);
-            case CONTINUATION -> processContinuation(frame);
-        };
+        try {
+            return switch (frame.getHeader().getType()) {
+                case DATA -> processData(frame);
+                case HEADERS -> processHeaders(frame);
+                case PRIORITY -> processPriority(frame);
+                case RST_STREAM -> processRstStream(frame);
+                case SETTINGS -> processSettings(frame);
+                case PUSH_PROMISE -> processPushPromise(frame);
+                case PING -> processPing(frame);
+                case GOAWAY -> processGoAway(frame);
+                case WINDOW_UPDATE -> processWindowUpdate(frame);
+                case CONTINUATION -> processContinuation(frame);
+            };
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return Http2ConnectionIO.State.BREAK;
     }
 
 
@@ -184,8 +184,9 @@ public class DefaultHttp2Connection implements HttpConnection, Runnable {
             updateReceiveWindowSize(-frame.getPayload().length);
             updateReceiveWindowSize(streamId, -frame.getPayload().length);
         }
-        Http2RequestBodyChannel bodyChannel = requestBodyChannels.get(streamId);
-        bodyChannel.put(frame.getPayload());
+        Http2RemoteBodyChannel bodyChannel = requestBodyChannels.get(streamId);
+        if (frame.getHeader().getLength() > 0)
+            bodyChannel.put(frame.getPayload());
         if (frame.isEndStream()) {
             bodyChannel.closeInbound();
             requestBodyChannels.remove(streamId);
@@ -215,36 +216,36 @@ public class DefaultHttp2Connection implements HttpConnection, Runnable {
     }
 
     protected void createStream(int streamId, boolean isEndStream) {
-        synchronized (sendWindowSizeLock) {
+        synchronized (receiveWindowSizeLock) {
             receiveWindowSizes.put(streamId, localSettings.getInitialWindowSize());
+        }
+        synchronized (sendWindowSizeLock) {
             sendWindowSizes.put(streamId, remoteSettings.getInitialWindowSize());
         }
 
-        {
-            HttpBody body;
-            Http2RequestBodyChannel bodyChannel = null;
-            if (isEndStream) {
-                body = new DefaultHttpBody.DefaultBuilder().setEmpty().build();
-            } else {
-                bodyChannel = new Http2RequestBodyChannel(localSettings.getInitialWindowSize(), consumed -> {
-                    synchronized (receiveWindowSizeLock) {
-                        this.consumedWindowSize += consumed;
-                        this.consumedWindowSizes.put(streamId, Optional.ofNullable(this.consumedWindowSizes.get(streamId)).orElse(0) + consumed);
-                        if (this.consumedWindowSize > server.getOption(StandardHttpOptions.CONNECTION_WINDOW_SIZE_THRESHOLD)) {
-                            updateReceiveWindowSize(this.consumedWindowSize);
-                            this.consumedWindowSize = 0;
-                        }
-                        if (this.consumedWindowSizes.get(streamId) > server.getOption(StandardHttpOptions.STREAM_WINDOW_SIZE_THRESHOLD)) {
-                            updateReceiveWindowSize(streamId, this.consumedWindowSizes.get(streamId));
-                            this.consumedWindowSizes.put(streamId, 0);
-                        }
+        HttpBody httpBody;
+        Http2RemoteBodyChannel bodyChannel = null;
+        if (isEndStream) {
+            httpBody = new DefaultHttpBody.DefaultBuilder().setEmpty().build();
+        } else {
+            bodyChannel = new Http2RemoteBodyChannel(localSettings.getInitialWindowSize(), consumed -> {
+                synchronized (receiveWindowSizeLock) {
+                    this.consumedWindowSize += consumed;
+                    this.consumedWindowSizes.put(streamId, Optional.ofNullable(this.consumedWindowSizes.get(streamId)).orElse(0) + consumed);
+                    if (this.consumedWindowSize > server.getOption(StandardHttpOptions.CONNECTION_WINDOW_SIZE_THRESHOLD)) {
+                        updateReceiveWindowSize(this.consumedWindowSize);
+                        this.consumedWindowSize = 0;
                     }
-                });
-                body = new DefaultHttpBody.DefaultBuilder().setInput(bodyChannel).build();
-            }
-            requestBodyChannels.put(streamId, bodyChannel);
-            requestBuilder.setBody(body);
+                    if (this.consumedWindowSizes.get(streamId) > server.getOption(StandardHttpOptions.STREAM_WINDOW_SIZE_THRESHOLD)) {
+                        updateReceiveWindowSize(streamId, this.consumedWindowSizes.get(streamId));
+                        this.consumedWindowSizes.put(streamId, 0);
+                    }
+                }
+            });
+            httpBody = new DefaultHttpBody.DefaultBuilder().setInput(bodyChannel).build();
         }
+        requestBodyChannels.put(streamId, bodyChannel);
+        requestBuilder.setBody(httpBody);
         HttpRequest request = requestBuilder.build();
         requestBuilder = null;
 
@@ -291,11 +292,11 @@ public class DefaultHttp2Connection implements HttpConnection, Runnable {
 
     private final Set<Duo> ready = new LinkedHashSet<>();
 
-    record Duo(int streamId, Http2AsynchronousByteChannel data) {}
+    record Duo(int streamId, Http2LocalBodyChannel data) {}
 
     protected void sendBody(int streamId, HttpBody body) {
         int bufferSize = server.getOption(StandardHttpOptions.WRITE_BUFFER_SIZE);
-        new Http2AsynchronousByteChannel(body, bufferSize, data -> {
+        new Http2LocalBodyChannel(body, bufferSize, data -> {
             synchronized (ready) {
                 ready.add(new Duo(streamId, data));
                 writeBody();
@@ -303,7 +304,7 @@ public class DefaultHttp2Connection implements HttpConnection, Runnable {
         });
     }
 
-    private final Set<Http2AsynchronousByteChannel> inProgress = new HashSet<>();
+    private final Set<Http2LocalBodyChannel> inProgress = new HashSet<>();
 
     protected void writeBody() {
         synchronized (ready) {
@@ -321,7 +322,7 @@ public class DefaultHttp2Connection implements HttpConnection, Runnable {
                     continue;
                 }
                 iterator.remove();
-                Http2AsynchronousByteChannel.ReadResult readResult = duo.data.read(size);
+                Http2LocalBodyChannel.ReadResult readResult = duo.data.read(size);
                 int result = readResult.result();
                 if (result == -1) {
                     ByteBuffer frameHeader = ByteBuffer.allocate(10);
@@ -334,9 +335,13 @@ public class DefaultHttp2Connection implements HttpConnection, Runnable {
                     ByteBuffer frameHeader = ByteBuffer.allocate(10);
                     frameHeader.putInt(result).put((byte) 0x00).put((byte) 0x00).putInt(duo.streamId).flip().get();
                     io.write(() -> {
-                        inProgress.remove(duo.data);
+                        synchronized (ready) {
+                            inProgress.remove(duo.data);
+                        }
                         duo.data.release(result);
                     }, frameHeader, readResult.buffer());
+                } else {
+                    System.err.println("ERROR duo = " + duo);
                 }
             }
         }

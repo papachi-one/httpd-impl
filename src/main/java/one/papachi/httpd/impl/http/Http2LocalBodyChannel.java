@@ -1,4 +1,4 @@
-package one.papachi.httpd.impl.http.http2;
+package one.papachi.httpd.impl.http;
 
 
 import one.papachi.httpd.impl.Run;
@@ -10,12 +10,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
-public class Http2AsynchronousByteChannel {
+public class Http2LocalBodyChannel {
 
     private final Object lock = new Object();
     private final AsynchronousByteChannel channel;
 
-    private final Consumer<Http2AsynchronousByteChannel> listener;
+    private final Consumer<Http2LocalBodyChannel> listener;
 
     private final ByteBuffer readBuffer;
 
@@ -29,7 +29,7 @@ public class Http2AsynchronousByteChannel {
 
     private final AtomicBoolean amIReading = new AtomicBoolean();
 
-    public Http2AsynchronousByteChannel(AsynchronousByteChannel channel, int bufferSize, Consumer<Http2AsynchronousByteChannel> listener) {
+    public Http2LocalBodyChannel(AsynchronousByteChannel channel, int bufferSize, Consumer<Http2LocalBodyChannel> listener) {
         this.channel = channel;
         this.listener = listener;
         this.readBuffer = ByteBuffer.allocate(bufferSize).flip();
@@ -45,13 +45,13 @@ public class Http2AsynchronousByteChannel {
             public void completed(Integer result, Void attachment) {
                 if (result == -1) {
                     isClosed = true;
-                    Run.async(() -> listener.accept(Http2AsynchronousByteChannel.this));
+                    Run.async(() -> listener.accept(Http2LocalBodyChannel.this));
                     return;
                 }
                 counter.addAndGet(result);
                 synchronized (lock) {
                     readBuffer.limit(writeBuffer.position());
-                    Run.async(() -> listener.accept(Http2AsynchronousByteChannel.this));
+                    Run.async(() -> listener.accept(Http2LocalBodyChannel.this));
                 }
                 if (writeBuffer.hasRemaining()) {
                     channel.read(writeBuffer, attachment, this);
@@ -93,7 +93,7 @@ public class Http2AsynchronousByteChannel {
                 Run.async(this::readFromChannel);
             }
             if (readBuffer.hasRemaining() || isClosed) {
-                Run.async(() -> listener.accept(Http2AsynchronousByteChannel.this));
+                Run.async(() -> listener.accept(Http2LocalBodyChannel.this));
             }
         }
     }

@@ -1,4 +1,4 @@
- package one.papachi.httpd.impl.http.http2;
+ package one.papachi.httpd.impl.http;
 
 
  import one.papachi.httpd.impl.PendingReadOperation;
@@ -15,7 +15,7 @@
  import java.util.concurrent.atomic.AtomicReference;
  import java.util.function.Consumer;
 
-public class Http2RequestBodyChannel implements AsynchronousByteChannel {
+public class Http2RemoteBodyChannel implements AsynchronousByteChannel {
 
     private final Object lock = new Object();
 
@@ -27,7 +27,7 @@ public class Http2RequestBodyChannel implements AsynchronousByteChannel {
 
     private final Consumer<Integer> listener;
 
-    public Http2RequestBodyChannel(int readBufferSize, Consumer<Integer> listener) {
+    public Http2RemoteBodyChannel(int readBufferSize, Consumer<Integer> listener) {
         this.readBuffer = ByteBuffer.allocate(readBufferSize).flip();
         this.listener = listener;
     }
@@ -41,6 +41,7 @@ public class Http2RequestBodyChannel implements AsynchronousByteChannel {
 
     public void closeInbound() {
         closed = true;
+        transfer();
     }
 
     @Override

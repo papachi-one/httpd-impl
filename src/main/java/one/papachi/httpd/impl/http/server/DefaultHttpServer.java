@@ -9,7 +9,6 @@ import one.papachi.httpd.api.http.HttpsTLSSupplier;
 import one.papachi.httpd.api.websocket.WebSocketHandler;
 import one.papachi.httpd.impl.Run;
 import one.papachi.httpd.impl.StandardHttpOptions;
-import one.papachi.httpd.impl.http.http2.server.DefaultHttp2Connection;
 import one.papachi.httpd.impl.net.AsynchronousSecureSocketChannel;
 
 import java.io.IOException;
@@ -207,7 +206,8 @@ public class DefaultHttpServer implements HttpServer, Runnable {
     }
 
     private void accepted(AsynchronousSocketChannel channel) {
-        String applicationProtocol = "http/1.1";
+//        String applicationProtocol = "http/1.1";
+        String applicationProtocol = "h2c";// TODO remove
         if (TLS != null) {
             channel = new AsynchronousSecureSocketChannel(channel, TLS.get());
             try {
@@ -218,9 +218,10 @@ public class DefaultHttpServer implements HttpServer, Runnable {
             }
             applicationProtocol = ((AsynchronousSecureSocketChannel) channel).getSslEngine().getApplicationProtocol();
         }
+        AsynchronousSocketChannel theChannel = channel;
         switch (applicationProtocol) {
-            case "http/1.1" -> executorService.execute(new DefaultHttpConnection(DefaultHttpServer.this, channel));
-            case "h2", "h2c" -> executorService.execute(new DefaultHttp2Connection(DefaultHttpServer.this, channel));
+            case "http/1.1" -> executorService.execute(new Http1ServerConnection(DefaultHttpServer.this, theChannel));
+            case "h2", "h2c" -> executorService.execute(() -> new Http2ServerConnection(DefaultHttpServer.this, theChannel));
             default -> close(channel);
         }
     }

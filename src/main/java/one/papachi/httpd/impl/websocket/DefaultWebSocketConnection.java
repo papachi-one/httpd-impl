@@ -18,6 +18,10 @@ import java.util.Optional;
 
 public class DefaultWebSocketConnection implements WebSocketConnection, Runnable {
 
+    public enum Mode {
+        CLIENT, SERVER
+    }
+
     @Override
     public HttpConnection getHttpConnection() {
         return null;
@@ -42,7 +46,7 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
 
     private final DefaultWebSocketSession webSocketSession;
 
-    public DefaultWebSocketConnection(HttpServer server, AsynchronousSocketChannel channel, ByteBuffer readBuffer) {
+    public DefaultWebSocketConnection(Mode mode, HttpServer server, AsynchronousSocketChannel channel, ByteBuffer readBuffer) {
         this.server = server;
         this.channel = channel;
         this.readBuffer = readBuffer;
@@ -57,20 +61,36 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
 
     @Override
     public void run() {
-        while (state != State.BREAK && state != State.CLOSED) {
-            state = switch (state) {
-                case READ -> read();
-                case READ_FRAME -> readFrame();
-                case READ_FIRST_BYTE -> readFirstByte();
-                case READ_SECOND_BYTE -> readSecondByte();
-                case READ_LENGTH -> readLength();
-                case READ_MASK -> readMask();
-                case PROCESS_FRAME -> processFrame();
-                case READ_PAYLOAD -> readPayload();
-                case SKIP_PAYLOAD -> skipPayload();
-                case ERROR -> State.CLOSED;
-                default -> State.ERROR;
-            };
+        while (true) {
+            if (state == State.READ) {
+                if (readBuffer.hasRemaining()) {
+                    state = resumeState;
+                } else {
+                    state = State.BREAK;
+                    read();
+                    break;
+                }
+            } else if (state == State.READ_FRAME) {
+                state = readFrame();
+            } else if (state == State.READ_FIRST_BYTE) {
+                state = readFirstByte();
+            } else if (state == State.READ_SECOND_BYTE) {
+                state = readSecondByte();
+            } else if (state == State.READ_LENGTH) {
+                state = readLength();
+            } else if (state == State.READ_MASK) {
+                state = readMask();
+            } else if (state == State.PROCESS_FRAME) {
+                state = processFrame();
+            } else if (state == State.READ_PAYLOAD) {
+                state = readPayload();
+            } else if (state == State.SKIP_PAYLOAD) {
+                state = skipPayload();
+            } else if (state == State.ERROR) {
+                state = State.BREAK;
+            }
+            if (state == State.BREAK)
+                break;
         }
     }
 
@@ -79,6 +99,7 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
             @Override
             public void completed(Integer result, Void attachment) {
                 if (result == -1) {
+                    run(State.BREAK);
                     return;
                 }
                 readBuffer.flip();
@@ -87,7 +108,7 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
 
             @Override
             public void failed(Throwable exc, Void attachment) {
-
+                run(State.ERROR);
             }
         });
         return State.BREAK;

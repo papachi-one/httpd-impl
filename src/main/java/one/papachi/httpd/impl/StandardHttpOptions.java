@@ -20,8 +20,8 @@ public final class StandardHttpOptions {
     public static final HttpOption<Integer> HEADER_LIST_SIZE = new StdHttpOption<>("HEADER_LIST_SIZE", Integer.class, Integer.MAX_VALUE);//HTTP/2.0
     public static final HttpOption<Integer> CONNECTION_WINDOW_SIZE = new StdHttpOption<>("CONNECTION_RCV_WINDOW_SIZE", Integer.class, 65535);// HTTP/2.0
     public static final HttpOption<Integer> STREAM_INITIAL_WINDOW_SIZE = new StdHttpOption<>("STREAM_RCV_WINDOW_SIZE", Integer.class, 65535);// HTTP/2.0
-    public static final HttpOption<Integer> CONNECTION_WINDOW_SIZE_THRESHOLD = new StdHttpOption<>("CONNECTION_WINDOW_SIZE_THRESHOLD", Integer.class, 49152);// HTTP/2.0
-    public static final HttpOption<Integer> STREAM_WINDOW_SIZE_THRESHOLD = new StdHttpOption<>("STREAM_WINDOW_SIZE_THRESHOLD", Integer.class, 49152);// HTTP/2.0
+    public static final HttpOption<Integer> CONNECTION_WINDOW_SIZE_THRESHOLD = new StdHttpOption<>("CONNECTION_WINDOW_SIZE_THRESHOLD", Integer.class, 32768);// HTTP/2.0
+    public static final HttpOption<Integer> STREAM_WINDOW_SIZE_THRESHOLD = new StdHttpOption<>("STREAM_WINDOW_SIZE_THRESHOLD", Integer.class, 32768);// HTTP/2.0
 
     private record StdHttpOption<T>(String name, Class<T> type, T defaultValue) implements HttpOption<T> {}
 

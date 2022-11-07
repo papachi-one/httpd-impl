@@ -13,7 +13,7 @@ import java.net.InetSocketAddress;
 public class WebSocketTest {
 
     public static void main(String[] args) throws Exception {
-        HttpsTLSSupplier tls = Util.getTLS();
+        HttpsTLSSupplier tls = Util.getTLSServer();
         HttpServer server = HttpServer.getInstance();
         server.getServerSocketChannel().bind(new InetSocketAddress(443));
         server.setOption(StandardHttpOptions.TLS, tls);
@@ -28,7 +28,7 @@ public class WebSocketTest {
         WebSocketStreamHandler streamHandler = data -> System.out.println(Util.readString(data));
         WebSocketMessageHandler messageHandler = data -> System.out.println(Util.readString(data));
         WebSocketFrameHandler frameHandler = data -> System.out.println(Util.readString(data));
-        webSocketSession.setHandler(streamHandler);
+        webSocketSession.setHandler(messageHandler);
     }
 
 }

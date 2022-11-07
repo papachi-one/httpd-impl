@@ -11,7 +11,6 @@ import one.papachi.httpd.impl.http.DefaultHttpResponse;
 import one.papachi.httpd.impl.http.HttpRequestBodyChannel;
 
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
@@ -24,12 +23,11 @@ import java.util.function.Consumer;
 public class Http1ClientConnection implements Runnable {
 
     enum State {
-        READ, READ_CHUNK_SIZE, READ_RESPONSE, READ_STATUS_LINE, READ_HEADER_LINE, PROCESS_RESPONSE, READ_BODY, ERROR, BREAK, CLOSED
+        READ, READ_CHUNK_SIZE, READ_RESPONSE, READ_STATUS_LINE, READ_HEADER_LINE, PROCESS_RESPONSE, READ_BODY, ERROR, BREAK
     }
 
     private static final byte[] CRLF = new byte[]{'\r', '\n'};
 
-    public final String host;
     public final AsynchronousSocketChannel channel;
     public final ByteBuffer readBuffer;
     public volatile State state, resumeState;
@@ -43,11 +41,9 @@ public class Http1ClientConnection implements Runnable {
     protected volatile HttpResponse response;
     protected volatile HttpRequestBodyChannel bodyChannel;
 
-    public Http1ClientConnection(String host) throws Exception {
-        this.host = host;
-        this.channel = AsynchronousSocketChannel.open();
+    public Http1ClientConnection(AsynchronousSocketChannel channel) throws Exception {
+        this.channel = channel;
         this.readBuffer = ByteBuffer.allocate(32 * 1024);// TODO get size from HttpOption
-        channel.connect(new InetSocketAddress(host, 80)).get();
     }
 
     public boolean isIdle() {
@@ -68,25 +64,36 @@ public class Http1ClientConnection implements Runnable {
 
     @Override
     public void run() {
-        while (state != State.BREAK && state != State.CLOSED) {
-            state = switch (state) {
-                case READ -> read();
-                case READ_CHUNK_SIZE -> readChunkSize();
-                case READ_RESPONSE -> readRequest();
-                case READ_STATUS_LINE -> readStatusLine();
-                case READ_HEADER_LINE -> readHeaderLine();
-                case PROCESS_RESPONSE -> processResponse();
-                case READ_BODY -> readBody();
-                case ERROR -> close();
-                default -> State.ERROR;
-            };
+        while (true) {
+            if (state == State.READ) {
+                if (readBuffer.hasRemaining()) {
+                    state = isChunked ? State.READ_CHUNK_SIZE : resumeState;
+                } else {
+                    state = State.BREAK;
+                    read();
+                    break;
+                }
+            } else if (state == State.READ_CHUNK_SIZE) {
+                state = readChunkSize();
+            } else if (state == State.READ_RESPONSE) {
+                state = readRequest();
+            } else if (state == State.READ_STATUS_LINE) {
+                state = readStatusLine();
+            } else if (state == State.READ_HEADER_LINE) {
+                state = readHeaderLine();
+            } else if (state == State.PROCESS_RESPONSE) {
+                state = processResponse();
+            } else if (state == State.READ_BODY) {
+                state = readBody();
+            } else if (state == State.ERROR) {
+                state = close();
+            }
+            if (state == State.BREAK)
+                break;
         }
     }
 
     protected State read() {
-        if (readBuffer.hasRemaining()) {
-            return isChunked ? State.READ_CHUNK_SIZE : resumeState;
-        }
         channel.read(readBuffer.compact(), null, new CompletionHandler<Integer, Void>() {
             @Override
             public void completed(Integer result, Void attachment) {
@@ -240,7 +247,7 @@ public class Http1ClientConnection implements Runnable {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        return State.CLOSED;
+        return State.BREAK;
     }
 
     private void sendRequestLineAndHeaders() {
