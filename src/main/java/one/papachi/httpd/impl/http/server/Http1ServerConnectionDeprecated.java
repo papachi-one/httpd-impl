@@ -10,9 +10,8 @@ import one.papachi.httpd.api.http.HttpServer;
 import one.papachi.httpd.impl.CustomDataBuffer;
 import one.papachi.httpd.impl.StandardHttpOptions;
 import one.papachi.httpd.impl.http.DefaultHttpBody;
-import one.papachi.httpd.impl.http.DefaultHttpHeader;
 import one.papachi.httpd.impl.http.DefaultHttpRequest;
-import one.papachi.httpd.impl.http.HttpRequestBodyChannel;
+import one.papachi.httpd.impl.http.Http1RemoteBodyChannel;
 import one.papachi.httpd.impl.net.AsynchronousBufferedSocketChannel;
 import one.papachi.httpd.impl.websocket.DefaultWebSocketConnection;
 
@@ -29,7 +28,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-public class Http1ServerConnection implements HttpConnection, Runnable {
+public class Http1ServerConnectionDeprecated implements HttpConnection, Runnable {
 
     enum State {
         READ, READ_CHUNK_SIZE, READ_REQUEST, READ_REQUEST_LINE, READ_HEADER_LINE, READ_BODY, PROCESS_REQUEST, BREAK, ERROR,
@@ -48,10 +47,10 @@ public class Http1ServerConnection implements HttpConnection, Runnable {
     protected long length, counter;
     protected HttpRequest.Builder requestBuilder;
     protected HttpRequest request;
-    protected HttpRequestBodyChannel bodyChannel;
+    protected Http1RemoteBodyChannel bodyChannel;
     protected HttpResponse response;
 
-    public Http1ServerConnection(HttpServer server, AsynchronousSocketChannel channel) {
+    public Http1ServerConnectionDeprecated(HttpServer server, AsynchronousSocketChannel channel) {
         this.server = server;
         this.channel = channel;
         this.readBuffer = ByteBuffer.allocate(server.getOption(StandardHttpOptions.READ_BUFFER_SIZE)).flip();
@@ -80,7 +79,7 @@ public class Http1ServerConnection implements HttpConnection, Runnable {
                     state = isChunked ? State.READ_CHUNK_SIZE : resumeState;
                 } else {
                     state = State.BREAK;
-                    read();
+                    readResponseBody();
                     break;
                 }
             } else if (state == State.READ_CHUNK_SIZE) {
@@ -94,7 +93,7 @@ public class Http1ServerConnection implements HttpConnection, Runnable {
             } else if (state == State.PROCESS_REQUEST) {
                 state = processRequest();
             } else if (state == State.READ_BODY) {
-                state = readBody();
+                state = readRequestBody();
             } else if (state == State.ERROR) {
                 state = close();
             }
@@ -103,7 +102,7 @@ public class Http1ServerConnection implements HttpConnection, Runnable {
         }
     }
 
-    protected State read() {
+    protected State readResponseBody() {
         channel.read(readBuffer.compact(), null, new CompletionHandler<Integer, Void>() {
             @Override
             public void completed(Integer result, Void attachment) {
@@ -215,7 +214,7 @@ public class Http1ServerConnection implements HttpConnection, Runnable {
     }
 
     protected State processRequest() {
-        bodyChannel = new HttpRequestBodyChannel(() -> run(State.READ_BODY));
+        bodyChannel = new Http1RemoteBodyChannel(() -> run(State.READ_BODY));
         HttpBody body = new DefaultHttpBody.DefaultBuilder().setInput(bodyChannel).build();
         requestBuilder.setBody(body);
         request = requestBuilder.build();
@@ -241,7 +240,7 @@ public class Http1ServerConnection implements HttpConnection, Runnable {
         return State.BREAK;
     }
 
-    protected State readBody() {
+    protected State readRequestBody() {
         if ((readBuffer.hasRemaining() && counter < length) || (isChunked && length == 0) || (!isChunked && counter == length)) {
             if ((isChunked && length == 0) || (!isChunked && counter == length)) {
                 bodyChannel.closeInbound();
@@ -279,70 +278,63 @@ public class Http1ServerConnection implements HttpConnection, Runnable {
 
     protected void handleResponse(HttpResponse response, Throwable t) {
         this.response = response;
-        sendStatusLine();
+        sendStatusLineAndHeaders();
     }
 
-    protected void sendStatusLine() {
+    protected void sendStatusLineAndHeaders() {
+        boolean hasBody = response.getHttpBody() != null && response.getHttpBody().isPresent();
         byte[] statusLine = response.getStatusLine().getBytes(StandardCharsets.US_ASCII);
-        writeBuffer = ByteBuffer.allocate(statusLine.length + CRLF.length);
-        writeBuffer.put(statusLine);
-        writeBuffer.put(CRLF);
-        writeBuffer.flip();
+        List<byte[]> headerLines = new ArrayList<>();
+        response.getHeaders()
+                .stream()
+                .filter(header -> !header.getName().equalsIgnoreCase("Content-Length"))
+                .filter(header -> !header.getName().equalsIgnoreCase("Transfer-Encoding"))
+                .map(HttpHeader::getHeaderLine)
+                .map(String::getBytes)
+                .forEach(headerLines::add);
+        headerLines.add(hasBody ? "Transfer-Encoding: chunked".getBytes(StandardCharsets.US_ASCII) : "Content-Length: 0".getBytes(StandardCharsets.US_ASCII));
+        writeBuffer = ByteBuffer.allocate(statusLine.length + headerLines.stream().mapToInt(array -> array.length).sum() + (headerLines.size() * 2) + 4);
+        writeBuffer.put(statusLine).put(CRLF);
+        headerLines.forEach(array -> writeBuffer.put(array).put(CRLF));
+        writeBuffer.put(CRLF).flip();
         write(writeBuffer, result -> {
             writeBuffer = null;
-            sendHeaders();
-        });
-    }
-
-    protected void sendHeaders() {
-        List<byte[]> bytes = new ArrayList<>();
-        response.getHeaders().stream().filter(header -> !header.getName().equalsIgnoreCase("Content-Length")).filter(header -> !header.getName().equalsIgnoreCase("Transfer-Encoding")).map(HttpHeader::getHeaderLine).map(headerLine -> headerLine.getBytes(StandardCharsets.US_ASCII)).forEach(bytes::add);
-        if (response.getHttpBody().isPresent()) {
-            bytes.add(new DefaultHttpHeader.DefaultBuilder().setName("Transfer-Encoding").setValue("chunked").build().getHeaderLine().getBytes(StandardCharsets.US_ASCII));
-        } else {
-            bytes.add(new DefaultHttpHeader.DefaultBuilder().setName("Content-Length").setValue("0").build().getHeaderLine().getBytes(StandardCharsets.US_ASCII));
-        }
-        ByteBuffer buffer = ByteBuffer.allocate(bytes.stream().mapToInt(array -> array.length).sum() + (bytes.size() * 2) + 2);
-        bytes.forEach(array -> buffer.put(array).put(CRLF));
-        buffer.put(CRLF);
-        buffer.flip();
-        write(buffer, result -> {
-            if (response.getHttpBody().isPresent()) {
-                sendBody();
+            if (hasBody) {
+                sendResponseBody();
             } else {
                 run(State.READ_REQUEST);
             }
         });
     }
 
-    protected void sendBody() {
+    protected void sendResponseBody() {
         if (writeBuffer == null) {
             writeBuffer = ByteBuffer.allocate(server.getOption(StandardHttpOptions.WRITE_BUFFER_SIZE));
-            read(writeBuffer, result -> {
+            readResponseBody(writeBuffer, result -> {
                 if (result == -1) {
                     write(ByteBuffer.wrap(new byte[]{'0', '\r', '\n', '\r', '\n'}), result1 -> run(State.READ_REQUEST));
                     return;
                 }
                 writeBuffer.flip();
-                write(ByteBuffer.wrap((Integer.toString(writeBuffer.remaining(), 16) + "\r\n").getBytes()), result1 -> sendBody());
+                write(ByteBuffer.wrap((Integer.toString(writeBuffer.remaining(), 16) + "\r\n").getBytes()), result1 -> sendResponseBody());
             });
             return;
         }
         if (writeBuffer.hasRemaining()) {
-            write(writeBuffer, result -> sendBody());
+            write(writeBuffer, result -> sendResponseBody());
         } else {
-            read(writeBuffer.clear(), result -> {
+            readResponseBody(writeBuffer.clear(), result -> {
                 if (result == -1) {
                     write(ByteBuffer.wrap(new byte[]{'\r', '\n', '0', '\r', '\n', '\r', '\n'}), result1 -> run(State.READ_REQUEST));
                     return;
                 }
                 writeBuffer.flip();
-                write(ByteBuffer.wrap(("\r\n" + Integer.toString(writeBuffer.remaining(), 16) + "\r\n").getBytes()), result1 -> sendBody());
+                write(ByteBuffer.wrap(("\r\n" + Integer.toString(writeBuffer.remaining(), 16) + "\r\n").getBytes()), result1 -> sendResponseBody());
             });
         }
     }
 
-    private void read(ByteBuffer dst, Consumer<Integer> callback) {
+    private void readResponseBody(ByteBuffer dst, Consumer<Integer> callback) {
         response.getHttpBody().read(dst, null, new CompletionHandler<Integer, Void>() {
             @Override
             public void completed(Integer result, Void attachment) {

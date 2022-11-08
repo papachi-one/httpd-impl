@@ -34,6 +34,9 @@ public class Http2LocalBodyChannel {
         this.listener = listener;
         this.readBuffer = ByteBuffer.allocate(bufferSize).flip();
         this.writeBuffer = readBuffer.duplicate().clear();
+    }
+
+    public void start() {
         Run.async(this::readFromChannel);
     }
 

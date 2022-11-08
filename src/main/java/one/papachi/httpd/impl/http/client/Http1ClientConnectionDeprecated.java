@@ -8,19 +8,20 @@ import one.papachi.httpd.impl.CustomDataBuffer;
 import one.papachi.httpd.impl.Run;
 import one.papachi.httpd.impl.http.DefaultHttpBody;
 import one.papachi.httpd.impl.http.DefaultHttpResponse;
-import one.papachi.httpd.impl.http.HttpRequestBodyChannel;
+import one.papachi.httpd.impl.http.Http1RemoteBodyChannel;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
-public class Http1ClientConnection implements Runnable {
+public class Http1ClientConnectionDeprecated implements HttpClientConnection, Runnable {
 
     enum State {
         READ, READ_CHUNK_SIZE, READ_RESPONSE, READ_STATUS_LINE, READ_HEADER_LINE, PROCESS_RESPONSE, READ_BODY, ERROR, BREAK
@@ -39,17 +40,18 @@ public class Http1ClientConnection implements Runnable {
     protected volatile HttpRequest request;
     protected volatile HttpResponse.Builder responseBuilder;
     protected volatile HttpResponse response;
-    protected volatile HttpRequestBodyChannel bodyChannel;
+    protected volatile Http1RemoteBodyChannel bodyChannel;
 
-    public Http1ClientConnection(AsynchronousSocketChannel channel) throws Exception {
+    public Http1ClientConnectionDeprecated(AsynchronousSocketChannel channel) throws Exception {
         this.channel = channel;
         this.readBuffer = ByteBuffer.allocate(32 * 1024);// TODO get size from HttpOption
     }
 
     public boolean isIdle() {
-        return true;
+        return completableFuture == null;
     }
 
+    @Override
     public CompletableFuture<HttpResponse> send(HttpRequest request) {
         this.request = request;
         completableFuture = new CompletableFuture<>();
@@ -84,7 +86,7 @@ public class Http1ClientConnection implements Runnable {
             } else if (state == State.PROCESS_RESPONSE) {
                 state = processResponse();
             } else if (state == State.READ_BODY) {
-                state = readBody();
+                state = readResponseBody();
             } else if (state == State.ERROR) {
                 state = close();
             }
@@ -201,7 +203,7 @@ public class Http1ClientConnection implements Runnable {
     }
 
     protected State processResponse() {
-        bodyChannel = new HttpRequestBodyChannel(() -> run(State.READ_BODY));
+        bodyChannel = new Http1RemoteBodyChannel(() -> run(State.READ_BODY));
         HttpBody body = new DefaultHttpBody.DefaultBuilder().setInput(bodyChannel).build();
         responseBuilder.setBody(body);
         response = responseBuilder.build();
@@ -211,10 +213,11 @@ public class Http1ClientConnection implements Runnable {
             length = -1;
         }
         completableFuture.completeAsync(() -> response);
+        // TODO null completable future after body was read
         return State.BREAK;
     }
 
-    protected State readBody() {
+    protected State readResponseBody() {
         if ((readBuffer.hasRemaining() && counter < length) || (isChunked && length == 0) || (!isChunked && counter == length)) {
             if ((isChunked && length == 0) || (!isChunked && counter == length)) {
                 bodyChannel.closeInbound();
@@ -251,15 +254,24 @@ public class Http1ClientConnection implements Runnable {
     }
 
     private void sendRequestLineAndHeaders() {
+        boolean hasBody = request.getHttpBody() != null && request.getHttpBody().isPresent();
         byte[] requestLine = request.getRequestLine().getBytes(StandardCharsets.US_ASCII);
-        List<byte[]> headerLines = request.getHeaders().stream().map(HttpHeader::getHeaderLine).map(String::getBytes).toList();
+        List<byte[]> headerLines = new ArrayList<>();
+        request.getHeaders()
+                .stream()
+                .filter(header -> !header.getName().equalsIgnoreCase("Content-Length"))
+                .filter(header -> !header.getName().equalsIgnoreCase("Transfer-Encoding"))
+                .map(HttpHeader::getHeaderLine)
+                .map(String::getBytes)
+                .forEach(headerLines::add);
+        headerLines.add(hasBody ? "Transfer-Encoding: chunked".getBytes(StandardCharsets.US_ASCII) : "Content-Length: 0".getBytes(StandardCharsets.US_ASCII));
         writeBuffer = ByteBuffer.allocate(requestLine.length + headerLines.stream().mapToInt(array -> array.length).sum() + (headerLines.size() * 2) + 4);
         writeBuffer.put(requestLine).put(CRLF);
         headerLines.forEach(array -> writeBuffer.put(array).put(CRLF));
         writeBuffer.put(CRLF).flip();
         write(writeBuffer, result -> {
             writeBuffer = null;
-            if (request.getHttpBody() != null && request.getHttpBody().isPresent()) {
+            if (hasBody) {
                 sendRequestBody();
             } else {
                 run(State.READ_RESPONSE);
@@ -303,7 +315,7 @@ public class Http1ClientConnection implements Runnable {
 
             @Override
             public void failed(Throwable exc, Void attachment) {
-                // TODO
+                run(State.ERROR);
             }
         });
     }

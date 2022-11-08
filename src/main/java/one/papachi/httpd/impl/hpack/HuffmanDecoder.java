@@ -74,7 +74,7 @@ final class HuffmanDecoder {
      * Decompresses the given Huffman coded string literal.
      *
      * @param buf the string literal to be decoded
-     * @return the output stream for the compressed data
+     * @return the output stream for the compressed localBodyChannel
      * @throws IOException if an I/O error occurs. In particular,
      *                     an <code>IOException</code> may be thrown if the
      *                     output stream has been closed.

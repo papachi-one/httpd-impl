@@ -6,7 +6,8 @@ import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpResponse;
 import one.papachi.httpd.api.http.HttpsTLSSupplier;
 import one.papachi.httpd.impl.StandardHttpOptions;
-import one.papachi.httpd.impl.net.AsynchronousSecureSocketChannel;
+import one.papachi.httpd.impl.http.Http1ClientConnection;
+import one.papachi.httpd.impl.http.Http2ClientConnection;
 
 import java.net.InetSocketAddress;
 import java.nio.channels.AsynchronousSocketChannel;
@@ -19,10 +20,13 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.stream.Stream;
 
 public class DefaultHttpClient implements HttpClient {
 
-    private final Map<Address, List<Http1ClientConnection>> connections = new HashMap<>();
+    private final Map<Address, List<Http1ClientConnection>> connections1 = new HashMap<>();
+
+    private final Map<Address, List<Http2ClientConnection>> connections2 = new HashMap<>();
 
     private HttpsTLSSupplier TLS = null;
 
@@ -52,47 +56,64 @@ public class DefaultHttpClient implements HttpClient {
 
     private Integer STREAM_WINDOW_SIZE_THRESHOLD = StandardHttpOptions.STREAM_WINDOW_SIZE_THRESHOLD.defaultValue();
 
-    private record Address(String host, int port, boolean https) {}
+    private record Address(String host, int port, boolean https) {
+    }
 
     @Override
     public CompletableFuture<HttpResponse> send(String host, int port, boolean https, HttpRequest request) {
         Address address = new Address(host, port, https);
-//        Http1ClientConnection connection = getConnection(address);
-        Http2ClientConnection connection = getNewConnection2(address);
+        HttpClientConnection connection = getConnection(address);
         return connection.send(request);
     }
 
-    private Http1ClientConnection getConnection(Address address) {
-        return Optional.ofNullable(connections.get(address)).orElse(Collections.emptyList()).stream().filter(Http1ClientConnection::isIdle).findFirst().orElseGet(() -> getNewConnection(address));
+    private HttpClientConnection getConnection(Address address) {
+        Stream<HttpClientConnection> stream = Stream.concat(
+                Optional.ofNullable(connections2.get(address)).orElseGet(Collections::emptyList).stream(),
+                Optional.ofNullable(connections1.get(address)).orElseGet(Collections::emptyList).stream());
+        HttpClientConnection httpClientConnection = stream.filter(HttpClientConnection::isIdle).findFirst().orElseGet(() -> getNewConnection(address));
+        return httpClientConnection;
     }
 
-    private Http1ClientConnection getNewConnection(Address address) {
+    private HttpClientConnection getNewConnection(Address address) {
         try {
-            String applicationProtocol = "http/1.1";
+//            String applicationProtocol = "http/1.1";
+//            String applicationProtocol = "h2c";// TODO remove
+//            AsynchronousSocketChannel channel = AsynchronousSocketChannel.open();
+//            channel.connect(new InetSocketAddress(address.host, address.port)).get();
+//            if (address.https) {
+//                channel = new AsynchronousSecureSocketChannel(channel, TLS.get());
+//                ((AsynchronousSecureSocketChannel) channel).handshake().get();
+//                applicationProtocol = ((AsynchronousSecureSocketChannel) channel).getSslEngine().getApplicationProtocol();
+//            }
+//            HttpClientConnection connection = null;
+//            if ("http/1.1".equals(applicationProtocol)) {
+//                connection = new Http1ClientConnection(channel);
+//                List<Http1ClientConnection> connections = this.connections1.get(address);
+//                if (connections == null) this.connections1.put(address, connections = new ArrayList<>());
+//                connections.add((Http1ClientConnection) connection);
+//            } else if ("h2".equals(applicationProtocol) || "h2c".equals(applicationProtocol)) {
+//                connection = new Http2ClientConnection(this, channel);
+//                List<Http2ClientConnection> connections = this.connections2.get(address);
+//                if (connections == null) this.connections2.put(address, connections = new ArrayList<>());
+//                connections.add((Http2ClientConnection) connection);
+//            }
+//            return connection;
+
             AsynchronousSocketChannel channel = AsynchronousSocketChannel.open();
             channel.connect(new InetSocketAddress(address.host, address.port)).get();
-            if (address.https) {
-                channel = new AsynchronousSecureSocketChannel(channel, TLS.get());
-                ((AsynchronousSecureSocketChannel) channel).handshake().get();
-                applicationProtocol = ((AsynchronousSecureSocketChannel) channel).getSslEngine().getApplicationProtocol();
-            }
 
-            List<Http1ClientConnection> connections = this.connections.get(address);
-            if (connections == null) this.connections.put(address, connections = new ArrayList<>());
-            Http1ClientConnection connection = new Http1ClientConnection(channel);
-            connections.add(connection);
+//            Http1ClientConnection connection = new Http1ClientConnection(channel);
+//            List<Http1ClientConnection> connections = this.connections1.get(address);
+//            if (connections == null) this.connections1.put(address, connections = new ArrayList<>());
+//            connections.add((Http1ClientConnection) connection);
+
+            Http2ClientConnection connection = new Http2ClientConnection(channel);
+            List<Http2ClientConnection> connections = this.connections2.get(address);
+            if (connections == null) this.connections2.put(address, connections = new ArrayList<>());
+            connections.add((Http2ClientConnection) connection);
+
             return connection;
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return null;
-    }
 
-    private Http2ClientConnection getNewConnection2(Address address) {
-        try {
-            AsynchronousSocketChannel channel = AsynchronousSocketChannel.open();
-            channel.connect(new InetSocketAddress(address.host, address.port)).get();
-            return new Http2ClientConnection(this, channel);
         } catch (Exception e) {
             e.printStackTrace();
         }

@@ -66,7 +66,7 @@ public class HttpServerTest {
         DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
         builder.addHeader("Server", "papachi-httpd/1.0").addHeader("Content-Type", "text/plain").addHeader("Connection", "keep-alive");
 //        builder.setBody(sb.toString());
-                    builder.setBody(new DefaultHttpBody.DefaultBuilder().setInput(Path.of("c:\\Users\\PC\\Downloads\\fcp2121021.mp4")).build());
+                    builder.setBody(new DefaultHttpBody.DefaultBuilder().setInput(Path.of("c:\\Users\\PC\\Downloads\\15W vs 25W.png")).build());
         return builder.build();
     }
 

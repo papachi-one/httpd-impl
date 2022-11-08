@@ -175,10 +175,10 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
 
     private volatile DefaultWebSocketFrame frame;
 
-    private volatile WebSocketReadDataChannel dataChannel;
+    private volatile WebSocketRemoteDataChannel dataChannel;
 
     private State processFrame() {
-        frame = new DefaultWebSocketFrame(isFin, isMask, WebSocketFrame.Type.values()[opCode.ordinal()], length, mask, dataChannel = new WebSocketReadDataChannel(mask, () -> run(State.READ_PAYLOAD)));
+        frame = new DefaultWebSocketFrame(isFin, isMask, WebSocketFrame.Type.values()[opCode.ordinal()], length, mask, dataChannel = new WebSocketRemoteDataChannel(mask, () -> run(State.READ_PAYLOAD)));
         if ((opCode == OpCode.TEXT_FRAME || opCode == OpCode.BINARY_FRAME) && webSocketSession.getHandler() instanceof WebSocketFrameHandler handler) {
             handler.onFrame(frame);
             return State.BREAK;

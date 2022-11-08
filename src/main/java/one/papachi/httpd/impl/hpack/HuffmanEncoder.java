@@ -37,7 +37,7 @@ final class HuffmanEncoder {
     /**
      * Compresses the input string literal using the Huffman coding.
      *
-     * @param out  the output stream for the compressed data
+     * @param out  the output stream for the compressed localBodyChannel
      * @param data the string literal to be Huffman encoded
      * @throws IOException if an I/O error occurs.
      * @see com.twitter.hpack.HuffmanEncoder#encode(OutputStream, byte[], int, int)
@@ -49,9 +49,9 @@ final class HuffmanEncoder {
     /**
      * Compresses the input string literal using the Huffman coding.
      *
-     * @param out  the output stream for the compressed data
+     * @param out  the output stream for the compressed localBodyChannel
      * @param data the string literal to be Huffman encoded
-     * @param off  the start offset in the data
+     * @param off  the start offset in the localBodyChannel
      * @param len  the number of bytes to encode
      * @throws IOException if an I/O error occurs. In particular,
      *                     an <code>IOException</code> may be thrown if the
@@ -61,7 +61,7 @@ final class HuffmanEncoder {
         if (out == null) {
             throw new NullPointerException("out");
         } else if (data == null) {
-            throw new NullPointerException("data");
+            throw new NullPointerException("localBodyChannel");
         } else if (off < 0 || len < 0 || (off + len) < 0 || off > data.length || (off + len) > data.length) {
             throw new IndexOutOfBoundsException();
         } else if (len == 0) {
@@ -97,11 +97,11 @@ final class HuffmanEncoder {
      * Returns the number of bytes required to Huffman encode the input string literal.
      *
      * @param data the string literal to be Huffman encoded
-     * @return the number of bytes required to Huffman encode <code>data</code>
+     * @return the number of bytes required to Huffman encode <code>localBodyChannel</code>
      */
     public int getEncodedLength(byte[] data) {
         if (data == null) {
-            throw new NullPointerException("data");
+            throw new NullPointerException("localBodyChannel");
         }
         long len = 0;
         for (byte b : data) {

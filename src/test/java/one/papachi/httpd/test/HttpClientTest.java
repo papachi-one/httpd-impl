@@ -22,10 +22,10 @@ public class HttpClientTest {
             DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
             builder.setMethod("POST");
             builder.addHeader("Host", "local.papachi.one");
-            builder.addHeader("Content-Type", "application/json");
+//            builder.addHeader("Content-Type", "application/json");
             builder.addHeader("Content-Type", "application/octet-stream");
 //            builder.setBody(new DefaultHttpBody.DefaultBuilder().setInput("{\"name\":\"Pavel Csefalvay\"}").build());
-            builder.setBody(new DefaultHttpBody.DefaultBuilder().setInput(Path.of("c:\\Users\\PC\\Downloads\\fcp2121021.mp4")).build());
+            builder.setBody(new DefaultHttpBody.DefaultBuilder().setInput(Path.of("c:\\Users\\PC\\Downloads\\15W vs 25W.png")).build());
             HttpRequest request = builder.build();
             HttpResponse response = client.send("local.papachi.one", 80, false, request).get();
             System.out.println(response);

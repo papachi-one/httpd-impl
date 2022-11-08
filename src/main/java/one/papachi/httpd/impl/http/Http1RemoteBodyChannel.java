@@ -15,7 +15,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class HttpRequestBodyChannel implements AsynchronousByteChannel {
+public class Http1RemoteBodyChannel implements AsynchronousByteChannel {
 
     private final Object lock = new Object();
 
@@ -26,7 +26,7 @@ public class HttpRequestBodyChannel implements AsynchronousByteChannel {
     protected ByteBuffer readBuffer = ByteBuffer.allocate(0);
     protected volatile boolean closed;
 
-    public HttpRequestBodyChannel(Runnable listener) {
+    public Http1RemoteBodyChannel(Runnable listener) {
         this.listener = listener;
     }
 

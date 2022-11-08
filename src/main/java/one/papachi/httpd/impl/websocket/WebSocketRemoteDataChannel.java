@@ -15,7 +15,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class WebSocketReadDataChannel implements AsynchronousByteChannel {
+public class WebSocketRemoteDataChannel implements AsynchronousByteChannel {
 
     private final Object lock = new Object();
 
@@ -30,7 +30,7 @@ public class WebSocketReadDataChannel implements AsynchronousByteChannel {
     protected ByteBuffer readBuffer = ByteBuffer.allocate(0);
     protected volatile boolean closed;
 
-    public WebSocketReadDataChannel(byte[] mask, Runnable listener) {
+    public WebSocketRemoteDataChannel(byte[] mask, Runnable listener) {
         this.mask = mask;
         this.listener = listener;
     }
