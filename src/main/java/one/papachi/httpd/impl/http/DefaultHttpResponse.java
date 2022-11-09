@@ -6,6 +6,7 @@ import one.papachi.httpd.api.http.HttpBody;
 import one.papachi.httpd.api.http.HttpHeader;
 import one.papachi.httpd.api.http.HttpHeaders;
 import one.papachi.httpd.api.http.HttpResponse;
+import one.papachi.httpd.api.http.HttpVersion;
 
 import java.io.InputStream;
 import java.nio.channels.AsynchronousByteChannel;
@@ -16,7 +17,7 @@ public class DefaultHttpResponse implements HttpResponse {
 
     public static class DefaultBuilder implements Builder {
 
-        private String version = "HTTP/1.1";
+        private HttpVersion version = HttpVersion.HTTP_1_1;
 
         private int statusCode = 200;
 
@@ -29,7 +30,7 @@ public class DefaultHttpResponse implements HttpResponse {
         private HttpBody body;
 
         @Override
-        public Builder setVersion(String version) {
+        public Builder setVersion(HttpVersion version) {
             this.version = version;
             return this;
         }
@@ -101,7 +102,7 @@ public class DefaultHttpResponse implements HttpResponse {
 
     }
 
-    private final String version;
+    private final HttpVersion version;
 
     private final int statusCode;
 
@@ -111,7 +112,7 @@ public class DefaultHttpResponse implements HttpResponse {
 
     private final HttpBody body;
 
-    DefaultHttpResponse(String version, int statusCode, String reasonPhrase, HttpHeaders headers, HttpBody body) {
+    DefaultHttpResponse(HttpVersion version, int statusCode, String reasonPhrase, HttpHeaders headers, HttpBody body) {
         this.version = version;
         this.statusCode = statusCode;
         this.reasonPhrase = reasonPhrase;
@@ -120,7 +121,7 @@ public class DefaultHttpResponse implements HttpResponse {
     }
 
     @Override
-    public String getVersion() {
+    public HttpVersion getVersion() {
         return version;
     }
 

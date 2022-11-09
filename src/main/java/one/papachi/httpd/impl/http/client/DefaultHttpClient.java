@@ -6,8 +6,6 @@ import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpResponse;
 import one.papachi.httpd.api.http.HttpsTLSSupplier;
 import one.papachi.httpd.impl.StandardHttpOptions;
-import one.papachi.httpd.impl.http.Http1ClientConnection;
-import one.papachi.httpd.impl.http.Http2ClientConnection;
 
 import java.net.InetSocketAddress;
 import java.nio.channels.AsynchronousSocketChannel;

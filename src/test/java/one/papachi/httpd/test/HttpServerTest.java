@@ -45,28 +45,25 @@ public class HttpServerTest {
 
     static HttpResponse process(HttpRequest request) throws Exception {
         StringBuilder sb = new StringBuilder();
-        sb.append(request.getRequestLine()).append('\n');
+        sb.append(request.getMethod()).append(' ').append(request.getPath()).append(' ').append(request.getVersion()).append('\n');
         request.getHeaders().forEach(header -> sb.append(header.getHeaderLine()).append('\n'));
         sb.append('\n');
         System.out.println(sb);
         HttpBody httpBody = request.getHttpBody();
         if (httpBody.isPresent()) {
             ByteBuffer buffer = ByteBuffer.allocate(64 * 1024);
-            BufferedOutputStream outputStream = new BufferedOutputStream(new FileOutputStream("server.out"));
-            int result;
-            while ((result = httpBody.read(buffer.clear()).get()) != -1) {
+            BufferedOutputStream outputStream = new BufferedOutputStream(new FileOutputStream("data.server"));
+            while ((httpBody.read(buffer.clear()).get()) != -1) {
                 buffer.flip();
                 outputStream.write(buffer.array(), buffer.arrayOffset() + buffer.position(), buffer.remaining());
-//                sb.append(new String(buffer.array(), buffer.arrayOffset() + buffer.position(), buffer.remaining()));
             }
             outputStream.close();
         }
-        String body = request.getHttpBody().isPresent() ? Util.readString(request.getHttpBody()) : "";
-        sb.append(body);
         DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
-        builder.addHeader("Server", "papachi-httpd/1.0").addHeader("Content-Type", "text/plain").addHeader("Connection", "keep-alive");
-//        builder.setBody(sb.toString());
-                    builder.setBody(new DefaultHttpBody.DefaultBuilder().setInput(Path.of("c:\\Users\\PC\\Downloads\\15W vs 25W.png")).build());
+        builder.addHeader("Server", "papachi-httpd/1.0");
+        builder.addHeader("Content-Type", "application/octet-stream");
+        builder.setBody(new DefaultHttpBody.DefaultBuilder().setInput(Path.of("c:\\Users\\PC\\Downloads\\15W vs 25W.png")).build());
+        builder.setBody(sb.toString());
         return builder.build();
     }
 

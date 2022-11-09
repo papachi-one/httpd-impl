@@ -69,11 +69,7 @@ public abstract class Http2Connection {
             ByteArrayOutputStream os = new ByteArrayOutputStream();
             try {
                 for (HttpHeader header : headers) {
-                    String name = header.getName();
-                    String value = header.getValue();
-                    if (name.equalsIgnoreCase("Transfer-Encoding") || name.equalsIgnoreCase("Content-Length") || name.equalsIgnoreCase("Connection"))
-                        continue;
-                    encoder.encodeHeader(os, name.toLowerCase().getBytes(StandardCharsets.US_ASCII), value.getBytes(StandardCharsets.US_ASCII), false);
+                    encoder.encodeHeader(os, header.getName().toLowerCase().getBytes(StandardCharsets.US_ASCII), header.getValue().getBytes(StandardCharsets.US_ASCII), false);
                 }
             } catch (IOException ex) {
                 ex.printStackTrace();
@@ -167,6 +163,8 @@ public abstract class Http2Connection {
 
     protected void updateReceiveWindowSize(int streamId, int delta) {
         synchronized (receiveWindowSizeLock) {
+            if (!receiveWindowSizes.containsKey(streamId))
+                return;
             receiveWindowSizes.put(streamId, receiveWindowSizes.get(streamId) + delta);
             if (delta > 0) {
                 ByteBuffer buffer = ByteBuffer.allocate(14);
@@ -184,6 +182,8 @@ public abstract class Http2Connection {
 
     protected void updateSendWindowSize(int streamId, int delta) {
         synchronized (sendWindowSizeLock) {
+            if (!sendWindowSizes.containsKey(streamId))
+                return;
             sendWindowSizes.put(streamId, sendWindowSizes.get(streamId) + delta);
         }
     }
@@ -266,12 +266,16 @@ public abstract class Http2Connection {
             updateReceiveWindowSize(-frame.getData().remaining());
             updateReceiveWindowSize(streamId, -frame.getData().remaining());
         }
-        Http2RemoteBodyChannel bodyChannel = remoteBodyChannels.get(streamId);
-        if (frame.getHeader().getLength() > 0) bodyChannel.put(frame.getData());
         if (frame.isEndStream()) {
             synchronized (receiveWindowSizeLock) {
                 receiveWindowSizes.remove(streamId);
             }
+        }
+        Http2RemoteBodyChannel bodyChannel = remoteBodyChannels.get(streamId);
+        if (frame.getHeader().getLength() > 0) {
+            bodyChannel.put(frame.getData());
+        }
+        if (frame.isEndStream()) {
             bodyChannel.closeInbound();
             remoteBodyChannels.remove(streamId);
         }

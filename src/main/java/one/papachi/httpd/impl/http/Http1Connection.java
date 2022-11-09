@@ -22,7 +22,7 @@ import java.util.function.Consumer;
 
 public abstract class Http1Connection implements Runnable {
 
-    enum State {
+    protected enum State {
         READ, READ_CHUNK_SIZE, READ_REMOTE, READ_REMOTE_LINE, READ_REMOTE_HEADER_LINE, READ_REMOTE_BODY, PROCESS, BREAK, ERROR,
     }
 
@@ -212,7 +212,7 @@ public abstract class Http1Connection implements Runnable {
         return State.BREAK;
     }
 
-    abstract void handleRemote();
+    abstract protected void handleRemote();
 
     protected State readRemoteBody() {
         if ((readBuffer.hasRemaining() && counter < length) || (isChunked && length == 0) || (!isChunked && counter == length)) {
@@ -250,26 +250,23 @@ public abstract class Http1Connection implements Runnable {
         return State.BREAK;
     }
 
-    abstract String getLocalLine();
+    protected abstract String getLocalLine();
 
-    abstract HttpHeaders getLocalHeaders();
+    protected abstract List<HttpHeader> getLocalHeaders();
 
-    abstract HttpBody getLocalBody();
+    protected abstract HttpBody getLocalBody();
 
     protected void sendLocalLineAndHeaders() {
         boolean hasBody = getLocalBody() != null && getLocalBody().isPresent();
-        byte[] statusLine = getLocalLine().getBytes(StandardCharsets.US_ASCII);
+        byte[] localLine = getLocalLine().getBytes(StandardCharsets.US_ASCII);
         List<byte[]> headerLines = new ArrayList<>();
-        getLocalHeaders().getHeaders()
+        getLocalHeaders()
                 .stream()
-                .filter(header -> !header.getName().equalsIgnoreCase("Content-Length"))
-                .filter(header -> !header.getName().equalsIgnoreCase("Transfer-Encoding"))
                 .map(HttpHeader::getHeaderLine)
                 .map(String::getBytes)
                 .forEach(headerLines::add);
-        headerLines.add(hasBody ? "Transfer-Encoding: chunked".getBytes(StandardCharsets.US_ASCII) : "Content-Length: 0".getBytes(StandardCharsets.US_ASCII));
-        writeBuffer = ByteBuffer.allocate(statusLine.length + headerLines.stream().mapToInt(array -> array.length).sum() + (headerLines.size() * 2) + 4);
-        writeBuffer.put(statusLine).put(CRLF);
+        writeBuffer = ByteBuffer.allocate(localLine.length + headerLines.stream().mapToInt(array -> array.length).sum() + (headerLines.size() * 2) + 4);
+        writeBuffer.put(localLine).put(CRLF);
         headerLines.forEach(array -> writeBuffer.put(array).put(CRLF));
         writeBuffer.put(CRLF).flip();
         write(writeBuffer, result -> {

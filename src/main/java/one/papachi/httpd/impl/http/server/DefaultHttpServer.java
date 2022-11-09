@@ -1,7 +1,5 @@
 package one.papachi.httpd.impl.http.server;
 
-
-
 import one.papachi.httpd.api.http.HttpHandler;
 import one.papachi.httpd.api.http.HttpOption;
 import one.papachi.httpd.api.http.HttpServer;
@@ -9,9 +7,6 @@ import one.papachi.httpd.api.http.HttpsTLSSupplier;
 import one.papachi.httpd.api.websocket.WebSocketHandler;
 import one.papachi.httpd.impl.Run;
 import one.papachi.httpd.impl.StandardHttpOptions;
-import one.papachi.httpd.impl.http.Http1ServerConnection;
-import one.papachi.httpd.impl.http.Http2ServerConnection;
-import one.papachi.httpd.impl.net.AsynchronousSecureSocketChannel;
 
 import java.io.IOException;
 import java.nio.channels.AsynchronousServerSocketChannel;
@@ -126,33 +121,33 @@ public class DefaultHttpServer implements HttpServer, Runnable {
 
     @Override
     public <T> T getOption(HttpOption<T> name) {
-        if (name == StandardHttpOptions.TLS)
+        if (name == StandardHttpOptions.TLS && TLS != null)
             return (T) TLS;
-        if (name == StandardHttpOptions.CONNECTION_IDLE_TIMEOUT)
+        if (name == StandardHttpOptions.CONNECTION_IDLE_TIMEOUT && CONNECTION_IDLE_TIMEOUT != null)
             return (T) CONNECTION_IDLE_TIMEOUT;
-        if (name == StandardHttpOptions.READ_BUFFER_SIZE)
+        if (name == StandardHttpOptions.READ_BUFFER_SIZE && READ_BUFFER_SIZE != null)
             return (T) READ_BUFFER_SIZE;
-        if (name == StandardHttpOptions.WRITE_BUFFER_SIZE)
+        if (name == StandardHttpOptions.WRITE_BUFFER_SIZE && WRITE_BUFFER_SIZE != null)
             return (T) WRITE_BUFFER_SIZE;
-        if (name == StandardHttpOptions.REQUEST_LINE_MAX_LENGTH)
+        if (name == StandardHttpOptions.REQUEST_LINE_MAX_LENGTH && REQUEST_LINE_MAX_LENGTH != null)
             return (T) REQUEST_LINE_MAX_LENGTH;
-        if (name == StandardHttpOptions.HEADER_LINE_MAX_LENGTH)
+        if (name == StandardHttpOptions.HEADER_LINE_MAX_LENGTH && HEADER_LINE_MAX_LENGTH != null)
             return (T) HEADER_LINE_MAX_LENGTH;
-        if (name == StandardHttpOptions.MAX_FRAME_SIZE)
+        if (name == StandardHttpOptions.MAX_FRAME_SIZE && MAX_FRAME_SIZE != null)
             return (T) MAX_FRAME_SIZE;
-        if (name == StandardHttpOptions.MAX_CONCURRENT_STREAMS)
+        if (name == StandardHttpOptions.MAX_CONCURRENT_STREAMS && MAX_CONCURRENT_STREAMS != null)
             return (T) MAX_CONCURRENT_STREAMS;
-        if (name == StandardHttpOptions.HEADER_TABLE_SIZE)
+        if (name == StandardHttpOptions.HEADER_TABLE_SIZE && HEADER_TABLE_SIZE != null)
             return (T) HEADER_TABLE_SIZE;
-        if (name == StandardHttpOptions.HEADER_LIST_SIZE)
+        if (name == StandardHttpOptions.HEADER_LIST_SIZE && HEADER_LIST_SIZE != null)
             return (T) HEADER_LIST_SIZE;
-        if (name == StandardHttpOptions.CONNECTION_WINDOW_SIZE)
+        if (name == StandardHttpOptions.CONNECTION_WINDOW_SIZE && CONNECTION_WINDOW_SIZE != null)
             return (T) CONNECTION_WINDOW_SIZE;
-        if (name == StandardHttpOptions.STREAM_INITIAL_WINDOW_SIZE)
+        if (name == StandardHttpOptions.STREAM_INITIAL_WINDOW_SIZE && STREAM_INITIAL_WINDOW_SIZE != null)
             return (T) STREAM_INITIAL_WINDOW_SIZE;
-        if (name == StandardHttpOptions.CONNECTION_WINDOW_SIZE_THRESHOLD)
+        if (name == StandardHttpOptions.CONNECTION_WINDOW_SIZE_THRESHOLD && CONNECTION_WINDOW_SIZE_THRESHOLD != null)
             return (T) CONNECTION_WINDOW_SIZE_THRESHOLD;
-        if (name == StandardHttpOptions.STREAM_WINDOW_SIZE_THRESHOLD)
+        if (name == StandardHttpOptions.STREAM_WINDOW_SIZE_THRESHOLD && STREAM_WINDOW_SIZE_THRESHOLD != null)
             return (T) STREAM_WINDOW_SIZE_THRESHOLD;
         throw new IllegalArgumentException();
     }

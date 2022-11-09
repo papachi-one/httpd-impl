@@ -1,10 +1,16 @@
-package one.papachi.httpd.impl.http;
+package one.papachi.httpd.impl.http.server;
 
 import one.papachi.httpd.api.http.HttpHandler;
 import one.papachi.httpd.api.http.HttpHeader;
 import one.papachi.httpd.api.http.HttpHeaders;
+import one.papachi.httpd.api.http.HttpMethod;
 import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpResponse;
+import one.papachi.httpd.api.http.HttpVersion;
+import one.papachi.httpd.impl.http.DefaultHttpHeaders;
+import one.papachi.httpd.impl.http.DefaultHttpRequest;
+import one.papachi.httpd.impl.http.Http2Connection;
+import one.papachi.httpd.impl.http.Http2ConnectionIO;
 
 import java.nio.channels.AsynchronousSocketChannel;
 import java.util.List;
@@ -22,10 +28,10 @@ public class Http2ServerConnection extends Http2Connection {
     @Override
     protected void handleRemote(int streamId) {
         HttpRequest.Builder builder = new DefaultHttpRequest.DefaultBuilder();
-        builder.setVersion("HTTP/2");
+        builder.setVersion(HttpVersion.HTTP_2);
         for (HttpHeader header : remoteHeaders.getHeaders()) {
             if (header.getName().equalsIgnoreCase(":method"))
-                builder.setMethod(header.getValue());
+                builder.setMethod(HttpMethod.valueOf(header.getValue()));
             else if (header.getName().equalsIgnoreCase(":path"))
                 builder.setPath(header.getValue());
             else if (header.getName().equalsIgnoreCase(":authority"))

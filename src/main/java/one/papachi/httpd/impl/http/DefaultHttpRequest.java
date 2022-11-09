@@ -4,7 +4,9 @@ package one.papachi.httpd.impl.http;
 import one.papachi.httpd.api.http.HttpBody;
 import one.papachi.httpd.api.http.HttpHeader;
 import one.papachi.httpd.api.http.HttpHeaders;
+import one.papachi.httpd.api.http.HttpMethod;
 import one.papachi.httpd.api.http.HttpRequest;
+import one.papachi.httpd.api.http.HttpVersion;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -19,7 +21,11 @@ public class DefaultHttpRequest implements HttpRequest {
 
     public static class DefaultBuilder implements HttpRequest.Builder {
 
-        private String method = "GET", path = "/", version = "HTTP/1.1";
+        private HttpMethod method = HttpMethod.GET;
+
+        private String path = "/";
+
+        private HttpVersion version = HttpVersion.HTTP_1_1;
 
         private final Map<String, List<String>> parameters = new LinkedHashMap<>();
 
@@ -28,7 +34,7 @@ public class DefaultHttpRequest implements HttpRequest {
         private HttpBody body;
 
         @Override
-        public Builder setMethod(String method) {
+        public Builder setMethod(HttpMethod method) {
             this.method = method;
             return this;
         }
@@ -49,7 +55,7 @@ public class DefaultHttpRequest implements HttpRequest {
         }
 
         @Override
-        public Builder setVersion(String version) {
+        public Builder setVersion(HttpVersion version) {
             this.version = version;
             return this;
         }
@@ -95,7 +101,11 @@ public class DefaultHttpRequest implements HttpRequest {
 
     }
 
-    private final String method, path, version;
+    private final HttpMethod method;
+
+    private final String path;
+
+    private final HttpVersion version;
 
     private final Map<String, List<String>> parameters;
 
@@ -103,7 +113,7 @@ public class DefaultHttpRequest implements HttpRequest {
 
     private final HttpBody body;
 
-    DefaultHttpRequest(String method, String path, String version, Map<String, List<String>> parameters, HttpHeaders headers, HttpBody body) {
+    DefaultHttpRequest(HttpMethod method, String path, HttpVersion version, Map<String, List<String>> parameters, HttpHeaders headers, HttpBody body) {
         this.method = method;
         this.path = path;
         this.version = version;
@@ -113,7 +123,7 @@ public class DefaultHttpRequest implements HttpRequest {
     }
 
     @Override
-    public String getMethod() {
+    public HttpMethod getMethod() {
         return method;
     }
 
@@ -123,7 +133,7 @@ public class DefaultHttpRequest implements HttpRequest {
     }
 
     @Override
-    public String getVersion() {
+    public HttpVersion getVersion() {
         return version;
     }
 
