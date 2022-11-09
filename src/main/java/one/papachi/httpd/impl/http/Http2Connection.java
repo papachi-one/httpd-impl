@@ -45,6 +45,7 @@ public abstract class Http2Connection {
     protected volatile HttpHeaders remoteHeaders;
     protected volatile HttpBody remoteBody;
     protected final Map<Integer, Http2RemoteBodyChannel> remoteBodyChannels = Collections.synchronizedMap(new HashMap<>());
+    protected final Set<Http2LocalBodyChannel> localBodyChannels = Collections.synchronizedSet(new HashSet<>());
     protected final AtomicInteger nextStreamId = new AtomicInteger(1);
     protected volatile boolean isEndStream;
 
@@ -100,8 +101,6 @@ public abstract class Http2Connection {
         }
     }
 
-    protected final Set<Http2LocalBodyChannel> localBodyChannels = Collections.synchronizedSet(new HashSet<>());
-
     protected void sendLocalBody(int streamId, HttpBody body) {
         Http2LocalBodyChannel localBodyChannel = new Http2LocalBodyChannel(body, StandardHttpOptions.WRITE_BUFFER_SIZE.defaultValue(), data -> {
             synchronized (localBodiesReady) {
@@ -132,6 +131,9 @@ public abstract class Http2Connection {
                 Http2LocalBodyChannel.ReadResult readResult = localBody.localBodyChannel.read(size);
                 int result = readResult.result();
                 if (result == -1 && localBodyChannels.remove(localBody.localBodyChannel)) {
+                    synchronized (sendWindowSizeLock) {
+                        sendWindowSizes.remove(localBody.streamId);
+                    }
                     ByteBuffer frameHeader = ByteBuffer.allocate(10);
                     frameHeader.putInt(0).put((byte) 0x00).put((byte) 0x01).putInt(localBody.streamId).flip().get();
                     io.write(frameHeader);
@@ -261,12 +263,15 @@ public abstract class Http2Connection {
             return Http2ConnectionIO.State.ERROR;// Http2Error.PROTOCOL_ERROR;
         }
         synchronized (receiveWindowSizeLock) {
-            updateReceiveWindowSize(-frame.getPayload().length);
-            updateReceiveWindowSize(streamId, -frame.getPayload().length);
+            updateReceiveWindowSize(-frame.getData().remaining());
+            updateReceiveWindowSize(streamId, -frame.getData().remaining());
         }
         Http2RemoteBodyChannel bodyChannel = remoteBodyChannels.get(streamId);
-        if (frame.getHeader().getLength() > 0) bodyChannel.put(frame.getPayload());
+        if (frame.getHeader().getLength() > 0) bodyChannel.put(frame.getData());
         if (frame.isEndStream()) {
+            synchronized (receiveWindowSizeLock) {
+                receiveWindowSizes.remove(streamId);
+            }
             bodyChannel.closeInbound();
             remoteBodyChannels.remove(streamId);
         }
@@ -326,17 +331,10 @@ public abstract class Http2Connection {
         if (frame.isAck() && frame.getHeader().getLength() > 0) {
             return Http2ConnectionIO.State.ERROR;// Http2Error.FRAME_SIZE_ERROR;
         }
-        byte[] payload = frame.getPayload();
-        int offset = 0;
-        for (int i = 0; i < payload.length / 6; i++) {
-            int identifier = 0;
-            int value = 0;
-            for (int j = 0; j < 2; j++) {
-                identifier = (identifier << 8) + (payload[offset++] & 0xFF);
-            }
-            for (int j = 0; j < 4; j++) {
-                value = (value << 8) + (payload[offset++] & 0xFF);
-            }
+        ByteBuffer payload = frame.getPayload();
+        while (payload.hasRemaining()) {
+            int identifier = payload.getShort() & 0xFFFF;
+            int value = payload.getInt();
             Http2Setting setting = Http2Setting.values()[identifier];
             switch (setting) {
                 case HEADER_TABLE_SIZE -> {

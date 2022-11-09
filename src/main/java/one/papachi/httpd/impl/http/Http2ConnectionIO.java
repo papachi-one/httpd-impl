@@ -23,7 +23,7 @@ public class Http2ConnectionIO implements Runnable {
     }
 
     public enum State {
-        READ, READ_MAGIC, READ_FRAME_HEADER, READ_FRAME_PAYLOAD, PROCESS_FRAME, ERROR, BREAK
+        READ, READ_MORE, READ_MAGIC, READ_FRAME_HEADER, READ_FRAME_PAYLOAD, PROCESS_FRAME, ERROR, BREAK
     }
 
     protected final AsynchronousSocketChannel channel;
@@ -31,8 +31,7 @@ public class Http2ConnectionIO implements Runnable {
     protected final Function<Http2Frame, State> listener;
     protected final int maxFrameSize;
     protected volatile State state, resumeState;
-    protected volatile CustomDataBuffer osBuffer;
-    protected volatile int length, counter;
+    protected volatile int length;
 
     private volatile Http2FrameHeader frameHeader;
     private volatile Http2Frame frame;
@@ -72,6 +71,10 @@ public class Http2ConnectionIO implements Runnable {
                     read();
                     break;
                 }
+            } else if (state == State.READ_MORE) {
+                state = State.BREAK;
+                read();
+                break;
             } else if (state == State.READ_MAGIC) {
                 state = readMagic();
             } else if (state == State.READ_FRAME_HEADER) {
@@ -110,71 +113,48 @@ public class Http2ConnectionIO implements Runnable {
     }
 
     private State readMagic() {
-        if (osBuffer == null) {
-            counter = 0;
-            length = 24;
-            osBuffer = new CustomDataBuffer(length);
-        }
-        while (counter < length && readBuffer.hasRemaining()) {
-            counter++;
-            byte b = readBuffer.get();
-            osBuffer.write(b);
-        }
-        if (counter == length) {
-            boolean equals = osBuffer.toString().equals("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
-            osBuffer = null;
+        if (readBuffer.remaining() < 24) {
+            resumeState = State.READ_MAGIC;
+            return State.READ_MORE;
+        } else {
+            String magicString = new String(readBuffer.array(), readBuffer.arrayOffset() + readBuffer.position(), 24);
+            readBuffer.position(readBuffer.position() + 24);
+            boolean equals = magicString.equals("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
             if (!equals) {
                 return State.ERROR;
             }
             return State.READ_FRAME_HEADER;
         }
-        resumeState = State.READ_MAGIC;
-        return State.READ;
     }
 
     private State readFrameHeader() {
-        if (osBuffer == null) {
-            counter = 0;
-            length = 9;
-            osBuffer = new CustomDataBuffer(length);
-        }
-        while (counter < length && readBuffer.hasRemaining()) {
-            counter++;
-            byte b = readBuffer.get();
-            osBuffer.write(b);
-        }
-        if (counter == length) {
-            byte[] data = osBuffer.getArray();
-            osBuffer = null;
-            frameHeader = new Http2FrameHeader(data);
+        if (readBuffer.remaining() < 9) {
+            resumeState = State.READ_FRAME_HEADER;
+            return State.READ_MORE;
+        } else {
+            ByteBuffer buffer = readBuffer.duplicate();
+            buffer.limit(buffer.position() + 9);
+            readBuffer.position(readBuffer.position() + 9);
+            frameHeader = new Http2FrameHeader(buffer);
             length = frameHeader.getLength();
             if (length > maxFrameSize) {
                 return State.ERROR;// error = Http2Error.FRAME_SIZE_ERROR;
             }
             return State.READ_FRAME_PAYLOAD;
         }
-        resumeState = State.READ_FRAME_HEADER;
-        return State.READ;
     }
 
     private State readFramePayload() {
-        if (osBuffer == null) {
-            counter = 0;
-            osBuffer = new CustomDataBuffer(length);
-        }
-        while (counter < length && readBuffer.hasRemaining()) {
-            counter++;
-            byte b = readBuffer.get();
-            osBuffer.write(b);
-        }
-        if (counter == length) {
-            byte[] framePayload = osBuffer.getArray();
-            osBuffer = null;
-            frame = new Http2Frame(frameHeader, framePayload);
+        if (readBuffer.remaining() < length) {
+            resumeState = State.READ_FRAME_PAYLOAD;
+            return State.READ_MORE;
+        } else {
+            ByteBuffer buffer = readBuffer.duplicate();
+            buffer.limit(buffer.position() + length);
+            readBuffer.position(readBuffer.position() + length);
+            frame = new Http2Frame(frameHeader, buffer);
             return State.PROCESS_FRAME;
         }
-        resumeState = State.READ_FRAME_PAYLOAD;
-        return State.READ;
     }
 
     private State processFrame() {

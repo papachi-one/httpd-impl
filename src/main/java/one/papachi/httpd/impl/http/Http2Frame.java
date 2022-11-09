@@ -6,7 +6,7 @@ public class Http2Frame {
 
     private final Http2FrameHeader header;
 
-    private final byte[] payload;
+    private final ByteBuffer buffer;
 
     private boolean isEndStream;
 
@@ -36,9 +36,9 @@ public class Http2Frame {
 
     private ByteBuffer data;
 
-    public Http2Frame(Http2FrameHeader header,  byte[] payload) {
+    public Http2Frame(Http2FrameHeader header, ByteBuffer buffer) {
         this.header = header;
-        this.payload = payload;
+        this.buffer = buffer;
         switch (header.getType()) {
             case DATA -> parseDataFrame();
             case HEADERS -> parseHeadersFrame();
@@ -57,8 +57,8 @@ public class Http2Frame {
         return header;
     }
 
-    public byte[] getPayload() {
-        return payload;
+    public ByteBuffer getPayload() {
+        return buffer;
     }
 
     public boolean isEndStream() {
@@ -110,49 +110,51 @@ public class Http2Frame {
     }
 
     private void parseDataFrame() {
+        data = buffer.duplicate();
         isEndStream = (header.getFlags() & 0x01) != 0;
         isPadded = (header.getFlags() & 0x08) != 0;
-        int offset = 0;
         if (isPadded) {
-            padLength = payload[offset++] & 0xFF;
+            padLength = data.get() & 0xFF;
         }
-        data = ByteBuffer.wrap(payload, offset, payload.length - offset - padLength);
+        data.limit(data.limit() - padLength);
     }
 
     private void parseHeadersFrame() {
+        data = buffer.duplicate();
         isEndStream = (header.getFlags() & 0x01) != 0;
         isEndHeaders = (header.getFlags() & 0x04) != 0;
         isPadded = (header.getFlags() & 0x08) != 0;
         isPriority = (header.getFlags() & 0x20) != 0;
-        int offset = 0;
         if (isPadded) {
-            padLength = payload[offset++] & 0xFF;
+            padLength = data.get() & 0xFF;
         }
         if (isPriority) {
             for (int i = 0; i < 4; i++) {
-                streamId = (streamId << 8) + (payload[offset++] & 0xFF);
+                streamId = (streamId << 8) + (data.get() & 0xFF);
             }
             if (streamId < 0) {
                 isExclusive = true;
             }
-            weight = payload[offset++] & 0xFF;
+            weight = data.get() & 0xFF;
         }
-        data = ByteBuffer.wrap(payload, offset, payload.length - offset - padLength);
+        data.limit(data.limit() - padLength);
     }
 
     private void parsePriorityFrame() {
+        ByteBuffer data = buffer.duplicate();
         for (int i = 0; i < 4; i++) {
-            streamId = (streamId << 8) + (payload[i] & 0xFF);
+            streamId = (streamId << 8) + (data.get() & 0xFF);
         }
         if (streamId < 0) {
             isExclusive = true;
         }
-        weight = payload[4] & 0xFF;
+        weight = data.get() & 0xFF;
     }
 
     private void parseRstStreamFrame() {
+        ByteBuffer data = buffer.duplicate();
         for (int i = 0; i < 4; i++) {
-            errorCode = (errorCode << 8) + (payload[i] & 0xFF);
+            errorCode = (errorCode << 8) + (data.get() & 0xFF);
         }
     }
 
@@ -161,43 +163,40 @@ public class Http2Frame {
     }
 
     private void parsePushPromiseFrame() {
+        data = buffer.duplicate();
         isEndHeaders = (header.getFlags() & 0x04) != 0;
         isPadded = (header.getFlags() & 0x08) != 0;
-        int offset = 0;
         if (isPadded) {
-            padLength = payload[offset++] & 0xFF;
+            padLength = data.get() & 0xFF;
         }
         for (int i = 0; i < 4; i++) {
-            streamId = (streamId << 8) + (payload[offset++] & 0xFF);
+            streamId = (streamId << 8) + (data.get() & 0xFF);
         }
-        data = ByteBuffer.wrap(payload, offset, payload.length - offset - padLength);
+        data.limit(data.limit() - padLength);
     }
 
     private void parsePingFrame() {
         isAck = (header.getFlags() & 0x01) != 0;
-        data = ByteBuffer.wrap(payload);
+        data = buffer.duplicate();
     }
 
     private void parseGoAwayFrame() {
-        int offset = 0;
+        data = buffer.duplicate();
         for (int i = 0; i < 4; i++) {
-            streamId = (streamId << 8) + (payload[offset++] & 0xFF);
+            streamId = (streamId << 8) + (data.get() & 0xFF);
         }
         for (int i = 0; i < 4; i++) {
-            errorCode = (errorCode << 8) + (payload[offset++] & 0xFF);
+            errorCode = (errorCode << 8) + (data.get() & 0xFF);
         }
-        data = ByteBuffer.wrap(payload, 8, payload.length - offset);
     }
 
     private void parseWindowUpdateFrame() {
-        for (int i = 0; i < 4; i++) {
-            windowSizeIncrement = (windowSizeIncrement << 8) + (payload[i] & 0xFF);
-        }
+        windowSizeIncrement = buffer.duplicate().getInt();
     }
 
     private void parseContinuationFrame() {
         isEndHeaders = (header.getFlags() & 0x04) != 0;
-        data = ByteBuffer.wrap(payload);
+        data = buffer.duplicate();
     }
 
 }

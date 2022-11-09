@@ -32,7 +32,7 @@ public class Http2RemoteBodyChannel implements AsynchronousByteChannel {
         this.listener = listener;
     }
 
-    public void put(byte[] data) {
+    public void put(ByteBuffer data) {
         synchronized (lock) {
             readBuffer.compact().put(data).flip();
         }
