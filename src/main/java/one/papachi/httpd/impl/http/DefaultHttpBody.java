@@ -2,6 +2,7 @@ package one.papachi.httpd.impl.http;
 
 
 import one.papachi.httpd.api.http.HttpBody;
+import one.papachi.httpd.impl.Run;
 import one.papachi.httpd.impl.net.GenericCompletionHandler;
 
 import java.io.IOException;
@@ -75,7 +76,9 @@ public class DefaultHttpBody implements HttpBody {
 
     @Override
     public <A> void read(ByteBuffer dst, A attachment, CompletionHandler<Integer, ? super A> handler) {
-        if (input instanceof AsynchronousByteChannel channel) {
+        if (input == null) {
+            Run.async(() -> handler.completed(-1, attachment));
+        } else if (input instanceof AsynchronousByteChannel channel) {
             channel.read(dst, attachment, handler);
         } else if (input instanceof AsynchronousFileChannel channel) {
             channel.read(dst, position.get(), attachment, new CompletionHandler<>() {

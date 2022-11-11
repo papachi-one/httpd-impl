@@ -24,6 +24,7 @@ public class HttpClientTest {
             builder.setMethod(HttpMethod.POST);
             builder.addHeader("Host", "local.papachi.one");
             builder.addHeader("Content-Type", "application/octet-stream");
+            builder.addHeader("Content-Length", "498251");
             builder.setBody(new DefaultHttpBody.DefaultBuilder().setInput(Path.of("c:\\Users\\PC\\Downloads\\15W vs 25W.png")).build());
             HttpRequest request = builder.build();
             HttpResponse response = client.send("local.papachi.one", 80, false, request).get();

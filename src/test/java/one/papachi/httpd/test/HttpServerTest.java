@@ -30,7 +30,7 @@ public class HttpServerTest {
         }
     }
 
-    static CompletionStage<HttpResponse> handle(HttpRequest request) {
+    static CompletableFuture<HttpResponse> handle(HttpRequest request) {
         CompletableFuture<HttpResponse> completableFuture = new CompletableFuture<>();
         completableFuture.completeAsync(() -> {
             try {
@@ -62,8 +62,10 @@ public class HttpServerTest {
         DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
         builder.addHeader("Server", "papachi-httpd/1.0");
         builder.addHeader("Content-Type", "application/octet-stream");
-        builder.setBody(new DefaultHttpBody.DefaultBuilder().setInput(Path.of("c:\\Users\\PC\\Downloads\\15W vs 25W.png")).build());
-        builder.setBody(sb.toString());
+        builder.addHeader("Content-Length", "3418040661");
+//        builder.setBody(new DefaultHttpBody.DefaultBuilder().setInput(Path.of("c:\\Users\\PC\\Downloads\\15W vs 25W.png")).build());
+        builder.setBody(new DefaultHttpBody.DefaultBuilder().setInput(Path.of("c:\\Users\\PC\\Downloads\\fcp2121021.mp4")).build());
+//        builder.setBody(sb.toString());
         return builder.build();
     }
 

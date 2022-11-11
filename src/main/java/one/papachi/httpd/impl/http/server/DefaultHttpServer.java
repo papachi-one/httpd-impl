@@ -196,7 +196,7 @@ public class DefaultHttpServer implements HttpServer, Runnable {
 
             @Override
             public void failed(Throwable exc, Void attachment) {
-                exc.printStackTrace();
+//                exc.printStackTrace();
             }
         });
     }
@@ -221,12 +221,8 @@ public class DefaultHttpServer implements HttpServer, Runnable {
 //            default -> close(channel);
 //        }
 
-//        new Http1ServerConnection(channel, httpHandler);
-        new Http2ServerConnection(channel, httpHandler);
-    }
-
-    private void failed(Throwable e) {
-        e.printStackTrace();
+        new Http1ServerConnection(channel, httpHandler);
+//        new Http2ServerConnection(channel, httpHandler);
     }
 
     private void close(AsynchronousSocketChannel channel) {

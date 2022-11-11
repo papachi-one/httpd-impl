@@ -17,24 +17,28 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
-import java.util.Optional;
 import java.util.function.Consumer;
 
 public abstract class Http1Connection implements Runnable {
+
+    protected enum Mode {
+        CLIENT, SERVER
+    }
 
     protected enum State {
         READ, READ_CHUNK_SIZE, READ_REMOTE, READ_REMOTE_LINE, READ_REMOTE_HEADER_LINE, READ_REMOTE_BODY, PROCESS, BREAK, ERROR,
     }
 
-    private static final byte[] CRLF = new byte[]{'\r', '\n'};
+    protected static final byte[] CRLF = new byte[]{'\r', '\n'};
 
-    private static final byte[] ZERO_CRLF_CRLF = new byte[]{'0', '\r', '\n', '\r', '\n'};
+    protected static final byte[] ZERO_CRLF_CRLF = new byte[]{'0', '\r', '\n', '\r', '\n'};
 
-    private static final byte[] CRLF_ZERO_CRLF_CRLF = new byte[]{'\r', '\n', '0', '\r', '\n', '\r', '\n'};
+    protected static final byte[] CRLF_ZERO_CRLF_CRLF = new byte[]{'\r', '\n', '0', '\r', '\n', '\r', '\n'};
 
-    private final AsynchronousSocketChannel channel;
-    private final ByteBuffer readBuffer;
-    private volatile ByteBuffer writeBuffer;
+    protected final AsynchronousSocketChannel channel;
+    protected final ByteBuffer readBuffer;
+    protected final Mode mode = Mode.SERVER;
+    protected volatile ByteBuffer writeBuffer;
     protected volatile State state = State.READ_REMOTE, resumeState;
     protected volatile CustomDataBuffer osBuffer;
     protected volatile boolean isChunked;
@@ -45,6 +49,13 @@ public abstract class Http1Connection implements Runnable {
     protected volatile HttpHeaders remoteHeaders;
     protected volatile Http1RemoteBodyChannel remoteBodyChannel;
     protected volatile HttpBody remoteBody;
+    protected volatile boolean isLocalBodyChunked;
+    protected volatile long localBodyLengthCounter;
+    protected volatile boolean shutdownOutboundAfterBody;
+    protected volatile boolean readRemoteBodyUntilEos;
+    protected volatile boolean isError;
+
+
 
     public Http1Connection(AsynchronousSocketChannel channel) {
         this.channel = channel;
@@ -87,25 +98,26 @@ public abstract class Http1Connection implements Runnable {
         }
     }
 
-    protected State read() {
-        channel.read(readBuffer.compact(), null, new CompletionHandler<Integer, Void>() {
-            @Override
-            public void completed(Integer result, Void attachment) {
-                if (result == -1) {
-                    isEos = true;
-                    run(resumeState);
-                    return;
-                }
-                readBuffer.flip();
-                run(isChunked ? State.READ_CHUNK_SIZE : resumeState);
+    protected final CompletionHandler<Integer, Void> read = new CompletionHandler<>() {
+        @Override
+        public void completed(Integer result, Void attachment) {
+            readBuffer.flip();
+            if (result == -1) {
+                isEos = true;
+                run(resumeState);
+                return;
             }
+            run(isChunked ? State.READ_CHUNK_SIZE : resumeState);
+        }
 
-            @Override
-            public void failed(Throwable exc, Void attachment) {
-                run(State.ERROR);
-            }
-        });
-        return State.BREAK;
+        @Override
+        public void failed(Throwable exc, Void attachment) {
+            run(State.ERROR);
+        }
+    };
+
+    protected void read() {
+        channel.read(readBuffer.compact(), null, read);
     }
 
     protected State readChunkSize() {
@@ -166,6 +178,9 @@ public abstract class Http1Connection implements Runnable {
                 return State.ERROR;
             }
         }
+        if (isEos) {
+            return State.ERROR;
+        }
         resumeState = State.READ_REMOTE_LINE;
         return State.READ;
     }
@@ -191,23 +206,15 @@ public abstract class Http1Connection implements Runnable {
                 return State.ERROR;
             }
         }
+        if (isEos) {
+            return State.ERROR;
+        }
         resumeState = State.READ_REMOTE_HEADER_LINE;
         return State.READ;
     }
 
     protected State processRemote() {
         remoteHeaders = remoteHeadersBuilder.build();
-        length = Long.parseLong(Optional.ofNullable(remoteHeaders.getHeaderValue("Content-Length")).orElse("0"));
-        if ("chunked".equals(remoteHeaders.getHeaderValue("Transfer-Encoding"))) {
-            isChunked = true;
-            length = -1;
-        }
-        if (isChunked || length > 0) {
-            remoteBodyChannel = new Http1RemoteBodyChannel(() -> run(State.READ_REMOTE_BODY));
-            remoteBody = new DefaultHttpBody.DefaultBuilder().setInput(remoteBodyChannel).build();
-        } else {
-            remoteBody = new DefaultHttpBody.DefaultBuilder().setEmpty().build();
-        }
         handleRemote();
         return State.BREAK;
     }
@@ -215,25 +222,18 @@ public abstract class Http1Connection implements Runnable {
     abstract protected void handleRemote();
 
     protected State readRemoteBody() {
-        if ((readBuffer.hasRemaining() && counter < length) || (isChunked && length == 0) || (!isChunked && counter == length)) {
-            if ((isChunked && length == 0) || (!isChunked && counter == length)) {
+        if ((readBuffer.hasRemaining() && counter < length) || (isChunked && length == 0) || (!isChunked && counter == length) || (readBuffer.hasRemaining() && readRemoteBodyUntilEos) || isEos) {
+            if ((isChunked && length == 0) || (!isChunked && counter == length) || isEos) {
                 remoteBodyChannel.closeInbound();
-            } else if (isChunked) {
-                int size = (int) (length - counter);
-                size = Math.min(size, readBuffer.remaining());
-                counter += size;
-                ByteBuffer duplicate = readBuffer.duplicate();
-                duplicate.limit(duplicate.position() + size);
-                readBuffer.position(readBuffer.position() + size);
-                remoteBodyChannel.put(duplicate);
+            } else if (readRemoteBodyUntilEos) {
+                remoteBodyChannel.put(readBuffer);
             } else {
-                long lSize = (length - counter);
-                int size = (int) Math.min(lSize, readBuffer.remaining());
+                int size = (int) Math.min(length - counter, readBuffer.remaining());
                 counter += size;
-                ByteBuffer duplicate = readBuffer.duplicate();
-                duplicate.limit(duplicate.position() + size);
+                ByteBuffer buffer = readBuffer.duplicate();
+                buffer.limit(buffer.position() + size);
                 readBuffer.position(readBuffer.position() + size);
-                remoteBodyChannel.put(duplicate);
+                remoteBodyChannel.put(buffer);
             }
             return State.BREAK;
         }
@@ -244,8 +244,7 @@ public abstract class Http1Connection implements Runnable {
     protected State close() {
         try {
             channel.close();
-        } catch (IOException e) {
-            e.printStackTrace();
+        } catch (IOException ignored) {
         }
         return State.BREAK;
     }
@@ -274,6 +273,9 @@ public abstract class Http1Connection implements Runnable {
             if (hasBody) {
                 sendLocalBody();
             } else {
+                if (shutdownOutboundAfterBody) {
+                    shutdownOutput();
+                }
                 run(State.READ_REMOTE);
             }
         });
@@ -281,49 +283,66 @@ public abstract class Http1Connection implements Runnable {
 
     protected void sendLocalBody() {
         if (writeBuffer == null) {
-            writeBuffer = ByteBuffer.allocate(StandardHttpOptions.WRITE_BUFFER_SIZE.defaultValue());
-            getLocalBody().read(writeBuffer.clear(), null, new CompletionHandler<Integer, Void>() {
-                @Override
-                public void completed(Integer result, Void attachment) {
-                    if (result == -1) {
-                        write(ByteBuffer.wrap(ZERO_CRLF_CRLF), result1 -> run(State.READ_REMOTE));
-                    } else {
-                        writeBuffer.flip();
-                        write(ByteBuffer.wrap((Integer.toString(writeBuffer.remaining(), 16) + "\r\n").getBytes()), result1 -> sendLocalBody());
-                    }
-                }
-
-                @Override
-                public void failed(Throwable exc, Void attachment) {
-                    run(State.ERROR);
-                }
-            });
-        } else if (writeBuffer.hasRemaining()) {
+            writeBuffer = ByteBuffer.allocate(StandardHttpOptions.WRITE_BUFFER_SIZE.defaultValue()).flip();
+            localBodyLengthCounter = 0L;
+        }
+        if (writeBuffer.hasRemaining()) {
             write(writeBuffer, result -> sendLocalBody());
         } else {
-            getLocalBody().read(writeBuffer.clear(), null, new CompletionHandler<Integer, Void>() {
-                @Override
-                public void completed(Integer result, Void attachment) {
-                    if (result == -1) {
-                        write(ByteBuffer.wrap(CRLF_ZERO_CRLF_CRLF), result1 -> run(State.READ_REMOTE));
-                    } else {
-                        writeBuffer.flip();
-                        write(ByteBuffer.wrap(("\r\n" + Integer.toString(writeBuffer.remaining(), 16) + "\r\n").getBytes()), result1 -> sendLocalBody());
-                    }
-                }
-
-                @Override
-                public void failed(Throwable exc, Void attachment) {
-                    run(State.ERROR);
-                }
-            });
+            getLocalBody().read(writeBuffer.clear(), null, readSendLocalBody);
         }
     }
+
+    protected void shutdownOutput() {
+        try {
+            channel.shutdownOutput();
+        } catch (IOException ignored) {
+        }
+    }
+
+    protected void localBodySent() {
+        if (shutdownOutboundAfterBody) {
+            shutdownOutput();
+        }
+        run(State.READ_REMOTE);
+    }
+
+    protected final CompletionHandler<Integer, Void> readSendLocalBody = new CompletionHandler<>() {
+        @Override
+        public void completed(Integer result, Void attachment) {
+            if (result == -1) {
+                if (isLocalBodyChunked) {
+                    write(ByteBuffer.wrap(localBodyLengthCounter == 0L ? ZERO_CRLF_CRLF : CRLF_ZERO_CRLF_CRLF), ignored -> localBodySent());
+                } else {
+                    localBodySent();
+                }
+            } else {
+                writeBuffer.flip();
+                if (isLocalBodyChunked) {
+                    byte[] hex = Integer.toString(writeBuffer.remaining(), 16).getBytes();
+                    ByteBuffer buffer = ByteBuffer.allocate(hex.length + (localBodyLengthCounter == 0L ? 0 : 2) + 2);
+                    if (localBodyLengthCounter > 0L) {
+                        buffer.put(CRLF);
+                    }
+                    buffer.put(hex).put(CRLF).flip();
+                    localBodyLengthCounter += result;
+                    write(buffer, ignored -> sendLocalBody());
+                } else {
+                    localBodyLengthCounter += result;
+                    sendLocalBody();
+                }
+            }
+        }
+
+        @Override
+        public void failed(Throwable exc, Void attachment) {
+            run(State.ERROR);
+        }
+    };
 
     private void write(ByteBuffer src, Consumer<Integer> callback) {
         channel.write(src, null, new CompletionHandler<Integer, Void>() {
             private int counter;
-
             @Override
             public void completed(Integer result, Void attachment) {
                 counter += result;

@@ -8,7 +8,11 @@ import one.papachi.httpd.api.http.HttpMethod;
 import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpVersion;
 
+import java.io.InputStream;
 import java.net.URLDecoder;
+import java.nio.channels.AsynchronousByteChannel;
+import java.nio.channels.AsynchronousFileChannel;
+import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -30,6 +34,8 @@ public class DefaultHttpRequest implements HttpRequest {
         private final Map<String, List<String>> parameters = new LinkedHashMap<>();
 
         private final HttpHeaders.Builder headersBuilder = new DefaultHttpHeaders.DefaultBuilder();
+
+        private final HttpBody.Builder bodyBuilder = new DefaultHttpBody.DefaultBuilder();
 
         private HttpBody body;
 
@@ -95,8 +101,32 @@ public class DefaultHttpRequest implements HttpRequest {
         }
 
         @Override
+        public Builder setBody(AsynchronousByteChannel channel) {
+            bodyBuilder.setInput(channel);
+            return this;
+        }
+
+        @Override
+        public Builder setBody(AsynchronousFileChannel channel) {
+            bodyBuilder.setInput(channel);
+            return this;
+        }
+
+        @Override
+        public Builder setBody(ReadableByteChannel channel) {
+            bodyBuilder.setInput(channel);
+            return this;
+        }
+
+        @Override
+        public Builder setBody(InputStream inputStream) {
+            bodyBuilder.setInput(inputStream);
+            return this;
+        }
+
+        @Override
         public HttpRequest build() {
-            return new DefaultHttpRequest(method, path, version, parameters, headersBuilder.build(), body);
+            return new DefaultHttpRequest(method, path, version, parameters, headersBuilder.build(), body != null ? body : bodyBuilder.build());
         }
 
     }

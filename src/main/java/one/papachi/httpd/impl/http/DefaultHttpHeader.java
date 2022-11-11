@@ -52,4 +52,8 @@ public class DefaultHttpHeader implements HttpHeader {
         return value;
     }
 
+    @Override
+    public String toString() {
+        return getHeaderLine();
+    }
 }

@@ -7,13 +7,16 @@ import one.papachi.httpd.api.http.HttpMethod;
 import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpResponse;
 import one.papachi.httpd.api.http.HttpVersion;
+import one.papachi.httpd.impl.http.DefaultHttpBody;
 import one.papachi.httpd.impl.http.DefaultHttpHeader;
 import one.papachi.httpd.impl.http.DefaultHttpRequest;
 import one.papachi.httpd.impl.http.Http1Connection;
+import one.papachi.httpd.impl.http.Http1RemoteBodyChannel;
 
 import java.nio.channels.AsynchronousSocketChannel;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 public class Http1ServerConnection extends Http1Connection {
 
@@ -39,9 +42,35 @@ public class Http1ServerConnection extends Http1Connection {
             case "HTTP/1.0" -> builder.setVersion(HttpVersion.HTTP_1_0);
             default -> builder.setVersion(HttpVersion.HTTP_1_1);
         }
+
+        String transferEncoding = remoteHeaders.getHeaderValue("Transfer-Encoding");
+        Long contentLength = Optional.ofNullable(remoteHeaders.getHeaderValue("Content-Length")).map(contentLengthString -> {
+            try {
+                return Long.parseLong(contentLengthString);
+            } catch (Exception ignored) {
+                return null;
+            }
+        }).orElse(null);
+        boolean hasRemoteBody = true;
+        isChunked = false;
+        length = -1;
+        if (transferEncoding != null) {
+            isChunked = true;
+        } else if (contentLength != null && contentLength < 0) {
+            isError = true;
+//            int setStatusCode = 400;
+//            String reasonPhrase = "Bad Request";
+        } else if (contentLength != null && contentLength >= 0) {
+            length = contentLength;
+        } else {
+            hasRemoteBody = false;
+        }
+        remoteBody = new DefaultHttpBody.DefaultBuilder().setInput(hasRemoteBody ? (remoteBodyChannel = new Http1RemoteBodyChannel(() -> run(State.READ_REMOTE_BODY))) : null).build();
+
         builder.setHeaders(remoteHeaders);
         builder.setBody(remoteBody);
         request = builder.build();
+
         handler.handle(request).whenComplete(this::onResponse);
     }
 
@@ -61,6 +90,8 @@ public class Http1ServerConnection extends Http1Connection {
 
     @Override
     protected List<HttpHeader> getLocalHeaders() {
+        isLocalBodyChunked = false;
+        localBodyLengthCounter = 0;
         String connection = response.getHeaderValue("Connection");
         String transferEncoding = response.getHeaderValue("Transfer-Encoding");
         String contentLength = response.getHeaderValue("Content-Length");
@@ -70,16 +101,19 @@ public class Http1ServerConnection extends Http1Connection {
                 continue;
             list.add(header);
         }
+        if (request.getVersion() == HttpVersion.HTTP_1_0 || "close".equals(request.getHeaderValue("Connection")) || "close".equals(connection))
+            shutdownOutboundAfterBody = true;
         if (request.getVersion() != HttpVersion.HTTP_1_0) {
-            list.add(new DefaultHttpHeader.DefaultBuilder().setName("Connection").setValue(connection == null ? "keep-alive" : connection).build());
+            list.add(new DefaultHttpHeader.DefaultBuilder().setName("Connection").setValue("close".equals(request.getHeaderValue("Connection")) || "close".equals(connection) ? "close" : "keep-alive").build());
             if (response.getHttpBody() != null && response.getHttpBody().isPresent()) {
-                if (contentLength == null || transferEncoding.equals("chunked")) {
+                if ((contentLength == null || "chunked".equals(transferEncoding)) && !shutdownOutboundAfterBody) {
+                    isLocalBodyChunked = true;
                     list.add(new DefaultHttpHeader.DefaultBuilder().setName("Transfer-Encoding").setValue("chunked").build());
-                } else {
+                } else if (contentLength != null) {
                     list.add(new DefaultHttpHeader.DefaultBuilder().setName("Content-Length").setValue(contentLength).build());
                 }
-            } else {
-                list.add(new DefaultHttpHeader.DefaultBuilder().setName("Content-Length").setValue("0").build());
+//            } else {
+//                list.add(new DefaultHttpHeader.DefaultBuilder().setName("Content-Length").setValue("0").build());
             }
         }
         return list;

@@ -100,15 +100,15 @@ public class DefaultHttpClient implements HttpClient {
             AsynchronousSocketChannel channel = AsynchronousSocketChannel.open();
             channel.connect(new InetSocketAddress(address.host, address.port)).get();
 
-//            Http1ClientConnection connection = new Http1ClientConnection(channel);
-//            List<Http1ClientConnection> connections = this.connections1.get(address);
-//            if (connections == null) this.connections1.put(address, connections = new ArrayList<>());
-//            connections.add((Http1ClientConnection) connection);
+            Http1ClientConnection connection = new Http1ClientConnection(channel);
+            List<Http1ClientConnection> connections = this.connections1.get(address);
+            if (connections == null) this.connections1.put(address, connections = new ArrayList<>());
+            connections.add((Http1ClientConnection) connection);
 
-            Http2ClientConnection connection = new Http2ClientConnection(channel);
-            List<Http2ClientConnection> connections = this.connections2.get(address);
-            if (connections == null) this.connections2.put(address, connections = new ArrayList<>());
-            connections.add((Http2ClientConnection) connection);
+//            Http2ClientConnection connection = new Http2ClientConnection(channel);
+//            List<Http2ClientConnection> connections = this.connections2.get(address);
+//            if (connections == null) this.connections2.put(address, connections = new ArrayList<>());
+//            connections.add((Http2ClientConnection) connection);
 
             return connection;
 
