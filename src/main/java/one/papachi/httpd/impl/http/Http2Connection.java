@@ -431,7 +431,7 @@ public abstract class Http2Connection {
             decoder.decode(inputStream, (nameArray, valueArray, sensitive) -> {
                 String name = new String(nameArray, StandardCharsets.US_ASCII);
                 String value = new String(valueArray, StandardCharsets.US_ASCII);
-                remoteHeadersBuilder.addHeader(name, value);
+                remoteHeadersBuilder.header(name, value);
             });
             remoteHeaders = remoteHeadersBuilder.build();
         } catch (IOException e) {
@@ -442,7 +442,7 @@ public abstract class Http2Connection {
             decoder.endHeaderBlock();
             int streamId = frame.getHeader().getStreamId();
             if (isEndStream) {
-                remoteBody = new DefaultHttpBody.DefaultBuilder().setEmpty().build();
+                remoteBody = new DefaultHttpBody.DefaultBuilder().empty().build();
             } else {
                 Http2RemoteBodyChannel bodyChannel = new Http2RemoteBodyChannel(localSettings.getInitialWindowSize(), consumed -> {
                     synchronized (receiveWindowSizeLock) {
@@ -458,7 +458,7 @@ public abstract class Http2Connection {
                         }
                     }
                 });
-                remoteBody = new DefaultHttpBody.DefaultBuilder().setInput(bodyChannel).build();
+                remoteBody = new DefaultHttpBody.DefaultBuilder().input(bodyChannel).build();
                 remoteBodyChannels.put(streamId, bodyChannel);
             }
             synchronized (receiveWindowSizeLock) {

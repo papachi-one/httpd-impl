@@ -30,68 +30,68 @@ public class DefaultHttpResponse implements HttpResponse {
         private HttpBody body;
 
         @Override
-        public Builder setVersion(HttpVersion version) {
+        public Builder version(HttpVersion version) {
             this.version = version;
             return this;
         }
 
         @Override
-        public Builder setStatusCode(int statusCode) {
+        public Builder statusCode(int statusCode) {
             this.statusCode = statusCode;
             return this;
         }
 
         @Override
-        public Builder setReasonPhrase(String reasonPhrase) {
+        public Builder reasonPhrase(String reasonPhrase) {
             this.reasonPhrase = reasonPhrase;
             return this;
         }
 
         @Override
-        public Builder addHeaderLine(String line) {
-            headersBuilder.addHeaderLine(line);
+        public Builder headerLine(String line) {
+            headersBuilder.headerLine(line);
             return this;
         }
 
         @Override
-        public Builder addHeader(HttpHeader header) {
-            headersBuilder.addHeader(header);
+        public Builder header(HttpHeader header) {
+            headersBuilder.header(header);
             return this;
         }
 
         @Override
-        public Builder addHeader(String name, String value) {
-            headersBuilder.addHeader(name, value);
+        public Builder header(String name, String value) {
+            headersBuilder.header(name, value);
             return this;
         }
 
         @Override
-        public Builder setBody(HttpBody body) {
+        public Builder body(HttpBody body) {
             this.body = body;
             return this;
         }
 
         @Override
-        public Builder setBody(AsynchronousByteChannel channel) {
-            bodyBuilder.setInput(channel);
+        public Builder body(AsynchronousByteChannel channel) {
+            bodyBuilder.input(channel);
             return this;
         }
 
         @Override
-        public Builder setBody(AsynchronousFileChannel channel) {
-            bodyBuilder.setInput(channel);
+        public Builder body(AsynchronousFileChannel channel) {
+            bodyBuilder.input(channel);
             return this;
         }
 
         @Override
-        public Builder setBody(ReadableByteChannel channel) {
-            bodyBuilder.setInput(channel);
+        public Builder body(ReadableByteChannel channel) {
+            bodyBuilder.input(channel);
             return this;
         }
 
         @Override
-        public Builder setBody(InputStream inputStream) {
-            bodyBuilder.setInput(inputStream);
+        public Builder body(InputStream inputStream) {
+            bodyBuilder.input(inputStream);
             return this;
         }
 

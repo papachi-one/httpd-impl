@@ -40,13 +40,13 @@ public class DefaultHttpRequest implements HttpRequest {
         private HttpBody body;
 
         @Override
-        public Builder setMethod(HttpMethod method) {
+        public Builder method(HttpMethod method) {
             this.method = method;
             return this;
         }
 
         @Override
-        public Builder setPath(String path) {
+        public Builder path(String path) {
             parameters.clear();
             String[] split1 = path.split("\\?", 2);
             String[] split2 = split1.length == 2 ? split1[1].split("&") : new String[0];
@@ -54,20 +54,20 @@ public class DefaultHttpRequest implements HttpRequest {
                 String[] split3 = string.split("=", 2);
                 String name = URLDecoder.decode(split3[0], StandardCharsets.UTF_8);
                 String value = URLDecoder.decode(split3.length == 2 ? split3[1] : "", StandardCharsets.UTF_8);
-                addParameter(name, value);
+                parameter(name, value);
             }
             this.path = split1[0];
             return this;
         }
 
         @Override
-        public Builder setVersion(HttpVersion version) {
+        public Builder version(HttpVersion version) {
             this.version = version;
             return this;
         }
 
         @Override
-        public Builder addParameter(String name, String value) {
+        public Builder parameter(String name, String value) {
             parameters.compute(name, (k, v) -> {
                 v = v != null ? v : new LinkedList<>();
                 v.add(value);
@@ -77,50 +77,50 @@ public class DefaultHttpRequest implements HttpRequest {
         }
 
         @Override
-        public Builder addHeaderLine(String line) {
-            headersBuilder.addHeaderLine(line);
+        public Builder headerLine(String line) {
+            headersBuilder.headerLine(line);
             return this;
         }
 
         @Override
-        public Builder addHeader(HttpHeader header) {
-            headersBuilder.addHeader(header);
+        public Builder header(HttpHeader header) {
+            headersBuilder.header(header);
             return this;
         }
 
         @Override
-        public Builder addHeader(String name, String value) {
-            headersBuilder.addHeader(name, value);
+        public Builder header(String name, String value) {
+            headersBuilder.header(name, value);
             return this;
         }
 
         @Override
-        public Builder setBody(HttpBody body) {
+        public Builder body(HttpBody body) {
             this.body = body;
             return this;
         }
 
         @Override
-        public Builder setBody(AsynchronousByteChannel channel) {
-            bodyBuilder.setInput(channel);
+        public Builder body(AsynchronousByteChannel channel) {
+            bodyBuilder.input(channel);
             return this;
         }
 
         @Override
-        public Builder setBody(AsynchronousFileChannel channel) {
-            bodyBuilder.setInput(channel);
+        public Builder body(AsynchronousFileChannel channel) {
+            bodyBuilder.input(channel);
             return this;
         }
 
         @Override
-        public Builder setBody(ReadableByteChannel channel) {
-            bodyBuilder.setInput(channel);
+        public Builder body(ReadableByteChannel channel) {
+            bodyBuilder.input(channel);
             return this;
         }
 
         @Override
-        public Builder setBody(InputStream inputStream) {
-            bodyBuilder.setInput(inputStream);
+        public Builder body(InputStream inputStream) {
+            bodyBuilder.input(inputStream);
             return this;
         }
 

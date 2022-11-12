@@ -24,31 +24,31 @@ public class DefaultHttpBody implements HttpBody {
         private Object object;
 
         @Override
-        public Builder setEmpty() {
+        public Builder empty() {
             object = null;
             return this;
         }
 
         @Override
-        public Builder setInput(AsynchronousByteChannel channel) {
+        public Builder input(AsynchronousByteChannel channel) {
             object = channel;
             return this;
         }
 
         @Override
-        public Builder setInput(AsynchronousFileChannel channel) {
+        public Builder input(AsynchronousFileChannel channel) {
             object = channel;
             return this;
         }
 
         @Override
-        public Builder setInput(ReadableByteChannel channel) {
+        public Builder input(ReadableByteChannel channel) {
             object = channel;
             return this;
         }
 
         @Override
-        public Builder setInput(InputStream inputStream) {
+        public Builder input(InputStream inputStream) {
             object = inputStream;
             return this;
         }

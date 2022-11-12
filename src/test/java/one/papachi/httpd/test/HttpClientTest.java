@@ -23,11 +23,11 @@ public class HttpClientTest {
 //        client.setOption(StandardHttpOptions.TLS, one.papachi.httpd.impl.Util.getTLSClient());
         while (true) {
             DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-            builder.setMethod(HttpMethod.POST);
-            builder.addHeader("Host", "local.papachi.one");
-            builder.addHeader("Content-Type", "application/octet-stream");
-            builder.addHeader("Content-Length", "498251");
-            builder.setBody(new DefaultHttpBody.DefaultBuilder().setInput(Path.of("c:\\Users\\PC\\Downloads\\15W vs 25W.png")).build());
+            builder.method(HttpMethod.POST);
+            builder.header("Host", "local.papachi.one");
+            builder.header("Content-Type", "application/octet-stream");
+            builder.header("Content-Length", "498251");
+            builder.body(new DefaultHttpBody.DefaultBuilder().input(Path.of("c:\\Users\\PC\\Downloads\\15W vs 25W.png")).build());
             HttpRequest request = builder.build();
             HttpResponse response = client.send(new URL("http://local.papachi.one"), request).get();
             System.out.println(response);
@@ -53,7 +53,7 @@ public class HttpClientTest {
         DefaultHttpClient client = new DefaultHttpClient();
         while (true) {
             DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-            builder.addHeader("Host", "ifconfig.io");
+            builder.header("Host", "ifconfig.io");
             HttpRequest request = builder.build();
             HttpResponse response = client.send(new URL("http://ifconfig.io"), request).get();
 

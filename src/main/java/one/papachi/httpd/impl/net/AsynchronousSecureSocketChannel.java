@@ -12,14 +12,10 @@ import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.CompletionHandler;
-import java.nio.channels.ReadPendingException;
-import java.nio.channels.WritePendingException;
-import java.sql.Time;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -122,113 +118,102 @@ public class AsynchronousSecureSocketChannel extends AsynchronousSocketChannel {
     }
 
     protected <A> void doHandshake(A attachment, CompletionHandler<Void, ? super A> handler) {
-            try {
-                while (true) {
-                    SSLEngineResult.HandshakeStatus handshakeStatus;
-                    synchronized (sslEngine) {
-                        handshakeStatus = sslEngine.getHandshakeStatus();
+        try {
+            while (true) {
+                SSLEngineResult.HandshakeStatus handshakeStatus;
+                synchronized (sslEngine) {
+                    handshakeStatus = sslEngine.getHandshakeStatus();
+                }
+                switch (handshakeStatus) {
+                    case NOT_HANDSHAKING, FINISHED -> {
+                        synchronized (lockRead) {
+                            netInBuffer.compact().flip();
+                        }
+                        Run.async(() -> handler.completed(null, attachment));
+                        return;
                     }
-                    switch (handshakeStatus) {
-                        case NOT_HANDSHAKING, FINISHED -> {
-                            synchronized (lockRead) {
-                                netInBuffer.compact().flip();
-                            }
-                            Run.async(() -> handler.completed(null, attachment));
-                            return;
+                    case NEED_TASK -> {
+                        Runnable task;
+                        while ((task = sslEngine.getDelegatedTask()) != null) {
+                            task.run();
                         }
-                        case NEED_TASK -> {
-                            Runnable task;
-                            while ((task = sslEngine.getDelegatedTask()) != null) {
-                                task.run();
+                    }
+                    case NEED_UNWRAP, NEED_UNWRAP_AGAIN -> {
+                        synchronized (lockRead) {
+                            SSLEngineResult.Status status;
+                            synchronized (sslEngine) {
+                                status = sslEngine.unwrap(netInBuffer, appInBuffer.compact()).getStatus();
                             }
-                        }
-                        case NEED_UNWRAP, NEED_UNWRAP_AGAIN -> {
-                            synchronized (lockRead) {
-                                SSLEngineResult.Status status;
-                                synchronized (sslEngine) {
-                                    status = sslEngine.unwrap(netInBuffer, appInBuffer.compact()).getStatus();
+                            appInBuffer.flip();
+                            switch (status) {
+                                case OK -> {
                                 }
-                                appInBuffer.flip();
-                                switch (status) {
-                                    case OK -> {
-                                    }
-                                    case BUFFER_UNDERFLOW -> {
-                                        channel.read(netInBuffer.compact(), attachment, new CompletionHandler<>() {
-                                            @Override
-                                            public void completed(Integer result, A attachment) {
-                                                synchronized (lockRead) {
-                                                    if (result == -1) {
-                                                        Run.async(() -> handler.failed(new ClosedChannelException(), attachment));
-                                                    } else {
-                                                        counter.addAndGet(result);
-                                                        netInBuffer.flip();
-                                                        Run.async(() -> doHandshake(attachment, handler));
-                                                    }
+                                case BUFFER_UNDERFLOW -> {
+                                    channel.read(netInBuffer.compact(), attachment, new CompletionHandler<>() {
+                                        @Override
+                                        public void completed(Integer result, A attachment) {
+                                            synchronized (lockRead) {
+                                                if (result == -1) {
+                                                    Run.async(() -> handler.failed(new ClosedChannelException(), attachment));
+                                                } else {
+                                                    netInBuffer.flip();
+                                                    Run.async(() -> doHandshake(attachment, handler));
                                                 }
                                             }
+                                        }
 
-                                            @Override
-                                            public void failed(Throwable exc, A attachment) {
-                                                Run.async(() -> handler.failed(exc, attachment));
-                                            }
-                                        });
-                                        return;
-                                    }
-                                    case BUFFER_OVERFLOW -> {
-                                        throw new SSLException("HandshakeStatus.NEED_UNWRAP, Status.BUFFER_OVERFLOW");
-                                    }
-                                    case CLOSED -> {
-                                        throw new SSLException("HandshakeStatus.NEED_UNWRAP, Status.CLOSED");
-                                    }
+                                        @Override
+                                        public void failed(Throwable exc, A attachment) {
+                                            Run.async(() -> handler.failed(exc, attachment));
+                                        }
+                                    });
+                                    return;
                                 }
+                                case BUFFER_OVERFLOW -> throw new SSLException("HandshakeStatus.NEED_UNWRAP, Status.BUFFER_OVERFLOW");
+                                case CLOSED -> throw new SSLException("HandshakeStatus.NEED_UNWRAP, Status.CLOSED");
                             }
                         }
-                        case NEED_WRAP -> {
-                            synchronized (lockWrite) {
-                                netOutBuffer.clear();
-                                SSLEngineResult.Status status;
-                                synchronized (sslEngine) {
-                                    status = sslEngine.wrap(ByteBuffer.allocate(sslEngine.getSession().getApplicationBufferSize()), netOutBuffer).getStatus();
-                                }
-                                switch (status) {
-                                    case OK -> {
-                                        netOutBuffer.flip();
-                                        channel.write(netOutBuffer, attachment, new CompletionHandler<>() {
-                                            @Override
-                                            public void completed(Integer result, A attachment) {
-                                                synchronized (lockRead) {
-                                                    if (netOutBuffer.hasRemaining()) {
-                                                        channel.write(netInBuffer, attachment, this);
-                                                    } else {
-                                                        Run.async(() -> doHandshake(attachment, handler));
-                                                    }
+                    }
+                    case NEED_WRAP -> {
+                        synchronized (lockWrite) {
+                            netOutBuffer.clear();
+                            SSLEngineResult.Status status;
+                            synchronized (sslEngine) {
+                                status = sslEngine.wrap(ByteBuffer.allocate(sslEngine.getSession().getApplicationBufferSize()), netOutBuffer).getStatus();
+                            }
+                            switch (status) {
+                                case OK -> {
+                                    netOutBuffer.flip();
+                                    channel.write(netOutBuffer, attachment, new CompletionHandler<>() {
+                                        @Override
+                                        public void completed(Integer result, A attachment) {
+                                            synchronized (lockRead) {
+                                                if (netOutBuffer.hasRemaining()) {
+                                                    channel.write(netInBuffer, attachment, this);
+                                                } else {
+                                                    Run.async(() -> doHandshake(attachment, handler));
                                                 }
                                             }
+                                        }
 
-                                            @Override
-                                            public void failed(Throwable exc, A attachment) {
-                                                Run.async(() -> handler.failed(exc, attachment));
-                                            }
-                                        });
-                                        return;
-                                    }
-                                    case BUFFER_UNDERFLOW -> {
-                                        throw new SSLException("HandshakeStatus.NEED_WRAP, Status.BUFFER_UNDERFLOW");
-                                    }
-                                    case BUFFER_OVERFLOW -> {
-                                        throw new SSLException("HandshakeStatus.NEED_WRAP, Status.BUFFER_OVERFLOW");
-                                    }
-                                    case CLOSED -> {
-                                        throw new SSLException("HandshakeStatus.NEED_WRAP, Status.CLOSED");
-                                    }
+                                        @Override
+                                        public void failed(Throwable exc, A attachment) {
+                                            Run.async(() -> handler.failed(exc, attachment));
+                                        }
+                                    });
+                                    return;
                                 }
+                                case BUFFER_UNDERFLOW -> throw new SSLException("HandshakeStatus.NEED_WRAP, Status.BUFFER_UNDERFLOW");
+                                case BUFFER_OVERFLOW -> throw new SSLException("HandshakeStatus.NEED_WRAP, Status.BUFFER_OVERFLOW");
+                                case CLOSED -> throw new SSLException("HandshakeStatus.NEED_WRAP, Status.CLOSED");
                             }
                         }
                     }
                 }
-            } catch (Exception e) {
-                Run.async(() -> handler.failed(e, attachment));
             }
+        } catch (Exception e) {
+            Run.async(() -> handler.failed(e, attachment));
+        }
     }
 
     @Override
@@ -238,19 +223,8 @@ public class AsynchronousSecureSocketChannel extends AsynchronousSocketChannel {
         return completableFuture;
     }
 
-    AtomicBoolean isReading = new AtomicBoolean(false);
-
-    AtomicLong counter = new AtomicLong(0);
-
     @Override
     public <A> void read(ByteBuffer dst, long timeout, TimeUnit unit, A attachment, CompletionHandler<Integer, ? super A> handler) {
-        if (!isReading.compareAndSet(false, true)) {
-            throw new ReadPendingException();
-        }
-        read0(dst, timeout, unit, attachment, handler);
-    }
-
-    <A> void read0(ByteBuffer dst, long timeout, TimeUnit unit, A attachment, CompletionHandler<Integer, ? super A> handler) {
         synchronized (lockRead) {
             if (appInBuffer.hasRemaining()) {
                 int counter = 0;
@@ -259,7 +233,6 @@ public class AsynchronousSecureSocketChannel extends AsynchronousSocketChannel {
                     counter++;
                 }
                 int result = counter;
-                isReading.set(false);
                 Run.async(() -> handler.completed(result, attachment));
             } else {
                 SSLEngineResult.Status status;
@@ -267,7 +240,6 @@ public class AsynchronousSecureSocketChannel extends AsynchronousSocketChannel {
                     try {
                         status = sslEngine.unwrap(netInBuffer, appInBuffer.compact()).getStatus();
                     } catch (SSLException e) {
-                        System.err.println("ERROR counter = " + counter.get());
                         Run.async(() -> handler.failed(e, attachment));
                         return;
                     }
@@ -275,7 +247,7 @@ public class AsynchronousSecureSocketChannel extends AsynchronousSocketChannel {
                 switch (status) {
                     case OK -> {
                         appInBuffer.flip();
-                        read0(dst, timeout, unit, attachment, handler);
+                        read(dst, timeout, unit, attachment, handler);
                     }
                     case BUFFER_UNDERFLOW -> {
                         appInBuffer.flip();
@@ -286,9 +258,8 @@ public class AsynchronousSecureSocketChannel extends AsynchronousSocketChannel {
                                     if (result == -1) {
                                         Run.async(() -> handler.completed(-1, attachment));
                                     } else {
-                                        counter.addAndGet(result);
                                         netInBuffer.flip();
-                                        read0(dst, timeout, unit, attachment, handler);
+                                        read(dst, timeout, unit, attachment, handler);
                                     }
                                 }
                             }
@@ -299,7 +270,8 @@ public class AsynchronousSecureSocketChannel extends AsynchronousSocketChannel {
                             }
                         });
                     }
-                    case BUFFER_OVERFLOW -> Run.async(() -> handler.failed(new SSLException("SSLEngine.unwrap(), Status.BUFFER_OVERFLOW"), attachment));
+                    case BUFFER_OVERFLOW ->
+                            Run.async(() -> handler.failed(new SSLException("SSLEngine.unwrap(), Status.BUFFER_OVERFLOW"), attachment));
                     case CLOSED -> Run.async(() -> handler.completed(-1, attachment));
                 }
             }
@@ -308,7 +280,58 @@ public class AsynchronousSecureSocketChannel extends AsynchronousSocketChannel {
 
     @Override
     public <A> void read(ByteBuffer[] dsts, int offset, int length, long timeout, TimeUnit unit, A attachment, CompletionHandler<Long, ? super A> handler) {
-        throw new UnsupportedOperationException("Not implemented");
+        if (appInBuffer.hasRemaining()) {
+            long counter = 0L;
+            for (int i = offset; i < offset + length; i++) {
+                ByteBuffer dst = dsts[i];
+                while (appInBuffer.hasRemaining() && dst.hasRemaining()) {
+                    dst.put(appInBuffer.get());
+                    counter++;
+                }
+            }
+            long result = counter;
+            Run.async(() -> handler.completed(result, attachment));
+        } else {
+            SSLEngineResult.Status status;
+            synchronized (sslEngine) {
+                try {
+                    status = sslEngine.unwrap(netInBuffer, appInBuffer.compact()).getStatus();
+                } catch (SSLException e) {
+                    Run.async(() -> handler.failed(e, attachment));
+                    return;
+                }
+            }
+            switch (status) {
+                case OK -> {
+                    appInBuffer.flip();
+                    read(dsts, offset, length, timeout, unit, attachment, handler);
+                }
+                case BUFFER_UNDERFLOW -> {
+                    appInBuffer.flip();
+                    channel.read(netInBuffer.compact(), timeout, unit, attachment, new CompletionHandler<>() {
+                        @Override
+                        public void completed(Integer result, A attachment) {
+                            synchronized (lockRead) {
+                                if (result == -1) {
+                                    Run.async(() -> handler.completed(-1L, attachment));
+                                } else {
+                                    netInBuffer.flip();
+                                    read(dsts, offset, length, timeout, unit, attachment, handler);
+                                }
+                            }
+                        }
+
+                        @Override
+                        public void failed(Throwable exc, A attachment) {
+                            handler.failed(exc, attachment);
+                        }
+                    });
+                }
+                case BUFFER_OVERFLOW ->
+                        Run.async(() -> handler.failed(new SSLException("SSLEngine.unwrap(), Status.BUFFER_OVERFLOW"), attachment));
+                case CLOSED -> Run.async(() -> handler.completed(-1L, attachment));
+            }
+        }
     }
 
     @Override
@@ -319,13 +342,8 @@ public class AsynchronousSecureSocketChannel extends AsynchronousSocketChannel {
     }
 
 
-    AtomicBoolean isWriting = new AtomicBoolean(false);
-
     @Override
     public <A> void write(ByteBuffer src, long timeout, TimeUnit unit, A attachment, CompletionHandler<Integer, ? super A> handler) {
-        if (!isWriting.compareAndSet(false, true)) {
-            throw new WritePendingException();
-        }
         synchronized (lockWrite) {
             SSLEngineResult sslEngineResult;
             synchronized (sslEngine) {
@@ -348,7 +366,6 @@ public class AsynchronousSecureSocketChannel extends AsynchronousSocketChannel {
                                 if (netOutBuffer.hasRemaining()) {
                                     channel.write(netOutBuffer, timeout, unit, attachment, this);
                                 } else {
-                                    isWriting.set(false);
                                     Run.async(() -> handler.completed(resultInt.get(), attachment));
                                 }
                             }
@@ -360,16 +377,59 @@ public class AsynchronousSecureSocketChannel extends AsynchronousSocketChannel {
                         }
                     });
                 }
-                case BUFFER_UNDERFLOW -> Run.async(() -> handler.failed(new SSLException("SSLEngine.wrap(), Status.BUFFER_UNDERFLOW"), attachment));
-                case BUFFER_OVERFLOW -> Run.async(() -> handler.failed(new SSLException("SSLEngine.wrap(), Status.BUFFER_OVERFLOW"), attachment));
-                case CLOSED -> Run.async(() -> handler.failed(new SSLException("SSLEngine.wrap(), Status.CLOSED"), attachment));
+                case BUFFER_UNDERFLOW ->
+                        Run.async(() -> handler.failed(new SSLException("SSLEngine.wrap(), Status.BUFFER_UNDERFLOW"), attachment));
+                case BUFFER_OVERFLOW ->
+                        Run.async(() -> handler.failed(new SSLException("SSLEngine.wrap(), Status.BUFFER_OVERFLOW"), attachment));
+                case CLOSED ->
+                        Run.async(() -> handler.failed(new SSLException("SSLEngine.wrap(), Status.CLOSED"), attachment));
             }
         }
     }
 
     @Override
     public <A> void write(ByteBuffer[] srcs, int offset, int length, long timeout, TimeUnit unit, A attachment, CompletionHandler<Long, ? super A> handler) {
-        throw new UnsupportedOperationException("Not implemented");
+        synchronized (lockWrite) {
+            SSLEngineResult sslEngineResult;
+            synchronized (sslEngine) {
+                try {
+                    sslEngineResult = sslEngine.wrap(srcs, offset, length, netOutBuffer.clear());
+                } catch (SSLException e) {
+                    Run.async(() -> handler.failed(e, attachment));
+                    return;
+                }
+            }
+            switch (sslEngineResult.getStatus()) {
+                case OK -> {
+                    netOutBuffer.flip();
+                    AtomicLong resultLong = new AtomicLong();
+                    channel.write(netOutBuffer, timeout, unit, attachment, new CompletionHandler<>() {
+                        @Override
+                        public void completed(Integer result, A attachment) {
+                            synchronized (lockWrite) {
+                                resultLong.addAndGet(result);
+                                if (netOutBuffer.hasRemaining()) {
+                                    channel.write(netOutBuffer, timeout, unit, attachment, this);
+                                } else {
+                                    Run.async(() -> handler.completed(resultLong.get(), attachment));
+                                }
+                            }
+                        }
+
+                        @Override
+                        public void failed(Throwable exc, A attachment) {
+                            handler.failed(exc, attachment);
+                        }
+                    });
+                }
+                case BUFFER_UNDERFLOW ->
+                        Run.async(() -> handler.failed(new SSLException("SSLEngine.wrap(), Status.BUFFER_UNDERFLOW"), attachment));
+                case BUFFER_OVERFLOW ->
+                        Run.async(() -> handler.failed(new SSLException("SSLEngine.wrap(), Status.BUFFER_OVERFLOW"), attachment));
+                case CLOSED ->
+                        Run.async(() -> handler.failed(new SSLException("SSLEngine.wrap(), Status.CLOSED"), attachment));
+            }
+        }
     }
 
     @Override
@@ -398,7 +458,7 @@ public class AsynchronousSecureSocketChannel extends AsynchronousSocketChannel {
                                     } else {
                                         try {
                                             channel.shutdownOutput();
-                                        } catch (IOException e) {
+                                        } catch (IOException ignored) {
                                         }
                                     }
                                 }

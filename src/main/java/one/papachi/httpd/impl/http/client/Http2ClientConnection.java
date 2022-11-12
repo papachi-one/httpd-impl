@@ -35,21 +35,21 @@ public class Http2ClientConnection extends Http2Connection implements HttpClient
         CompletableFuture<HttpResponse> completableFuture = new CompletableFuture<>();
         completableFutures.put(streamId, completableFuture);
         HttpHeaders.Builder builder = new DefaultHttpHeaders.DefaultBuilder();
-        builder.addHeader(":method", request.getMethod().name());
-        builder.addHeader(":path", request.getPath());
-        builder.addHeader(":scheme", "https");
+        builder.header(":method", request.getMethod().name());
+        builder.header(":path", request.getPath());
+        builder.header(":scheme", "https");
         for (HttpHeader header : request.getHeaders()) {
             if (header.getName().equalsIgnoreCase("Connection") || header.getName().equalsIgnoreCase("Transfer-Encoding") || header.getName().equalsIgnoreCase("Content-Length")) {
             } else if (header.getName().equalsIgnoreCase("Host")) {
-                builder.addHeader(":authority", header.getValue());
+                builder.header(":authority", header.getValue());
             } else {
-                builder.addHeader(new DefaultHttpHeader.DefaultBuilder().setName(header.getName().toLowerCase()).setValue(header.getValue()).build());
+                builder.header(new DefaultHttpHeader.DefaultBuilder().name(header.getName().toLowerCase()).value(header.getValue()).build());
             }
         }
         if (request.getHttpBody() != null && request.getHttpBody().isPresent()) {
             String contentLength = request.getHeaderValue("Content-Length");
             if (contentLength != null) {
-                builder.addHeader(new DefaultHttpHeader.DefaultBuilder().setName("Content-Length".toLowerCase()).setValue(contentLength).build());
+                builder.header(new DefaultHttpHeader.DefaultBuilder().name("Content-Length".toLowerCase()).value(contentLength).build());
             }
         }
         List<HttpHeader> headers = builder.build().getHeaders();
@@ -66,15 +66,15 @@ public class Http2ClientConnection extends Http2Connection implements HttpClient
     protected void handleRemote(int streamId) {
         CompletableFuture<HttpResponse> completableFuture = completableFutures.remove(streamId);
         HttpResponse.Builder builder = new DefaultHttpResponse.DefaultBuilder();
-        builder.setVersion(HttpVersion.HTTP_2);
+        builder.version(HttpVersion.HTTP_2);
         for (HttpHeader header : remoteHeaders.getHeaders()) {
             if (header.getName().equalsIgnoreCase(":status")) {
-                builder.setStatusCode(Integer.parseInt(header.getValue()));
+                builder.statusCode(Integer.parseInt(header.getValue()));
             } else {
-                builder.addHeader(header);
+                builder.header(header);
             }
         }
-        builder.setBody(remoteBody);
+        builder.body(remoteBody);
         HttpResponse response = builder.build();
         completableFuture.completeAsync(() -> response);
     }

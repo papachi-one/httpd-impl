@@ -37,11 +37,11 @@ public class Http1ServerConnection extends Http1Connection {
     protected void handleRemote() {
         HttpRequest.Builder builder = new DefaultHttpRequest.DefaultBuilder();
         String[] split = remoteLine.split(" ", 3);
-        builder.setMethod(HttpMethod.valueOf(split[0]));
-        builder.setPath(split[1]);
+        builder.method(HttpMethod.valueOf(split[0]));
+        builder.path(split[1]);
         switch (split.length == 3 ? split[2] : "") {
-            case "HTTP/1.0" -> builder.setVersion(HttpVersion.HTTP_1_0);
-            default -> builder.setVersion(HttpVersion.HTTP_1_1);
+            case "HTTP/1.0" -> builder.version(HttpVersion.HTTP_1_0);
+            default -> builder.version(HttpVersion.HTTP_1_1);
         }
 
         String transferEncoding = remoteHeaders.getHeaderValue("Transfer-Encoding");
@@ -72,10 +72,10 @@ public class Http1ServerConnection extends Http1Connection {
         } else {
             hasRemoteBody = false;
         }
-        remoteBody = new DefaultHttpBody.DefaultBuilder().setInput(hasRemoteBody ? (remoteBodyChannel = new Http1RemoteBodyChannel(() -> run(State.READ_REMOTE_BODY))) : null).build();
+        remoteBody = new DefaultHttpBody.DefaultBuilder().input(hasRemoteBody ? (remoteBodyChannel = new Http1RemoteBodyChannel(() -> run(State.READ_REMOTE_BODY))) : null).build();
 
-        builder.setHeaders(remoteHeaders);
-        builder.setBody(remoteBody);
+        builder.headers(remoteHeaders);
+        builder.body(remoteBody);
         request = builder.build();
 
         handler.handle(request).whenComplete(this::onResponse);
@@ -111,13 +111,13 @@ public class Http1ServerConnection extends Http1Connection {
         if (request.getVersion() == HttpVersion.HTTP_1_0 || "close".equals(request.getHeaderValue("Connection")) || "close".equals(connection))
             shutdownOutboundAfterBody = true;
         if (request.getVersion() != HttpVersion.HTTP_1_0) {
-            list.add(new DefaultHttpHeader.DefaultBuilder().setName("Connection").setValue("close".equals(request.getHeaderValue("Connection")) || "close".equals(connection) ? "close" : "keep-alive").build());
+            list.add(new DefaultHttpHeader.DefaultBuilder().name("Connection").value("close".equals(request.getHeaderValue("Connection")) || "close".equals(connection) ? "close" : "keep-alive").build());
             if (response.getHttpBody() != null && response.getHttpBody().isPresent()) {
                 if ((contentLength == null || "chunked".equals(transferEncoding)) && !shutdownOutboundAfterBody) {
                     isLocalBodyChunked = true;
-                    list.add(new DefaultHttpHeader.DefaultBuilder().setName("Transfer-Encoding").setValue("chunked").build());
+                    list.add(new DefaultHttpHeader.DefaultBuilder().name("Transfer-Encoding").value("chunked").build());
                 } else if (contentLength != null) {
-                    list.add(new DefaultHttpHeader.DefaultBuilder().setName("Content-Length").setValue(contentLength).build());
+                    list.add(new DefaultHttpHeader.DefaultBuilder().name("Content-Length").value(contentLength).build());
                 }
 //            } else {
 //                list.add(new DefaultHttpHeader.DefaultBuilder().setName("Content-Length").setValue("0").build());

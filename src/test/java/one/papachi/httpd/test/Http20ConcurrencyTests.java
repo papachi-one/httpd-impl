@@ -5,6 +5,7 @@ import one.papachi.httpd.api.http.HttpMethod;
 import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpResponse;
 import one.papachi.httpd.api.http.HttpServer;
+import one.papachi.httpd.api.http.HttpStatus;
 import one.papachi.httpd.api.http.HttpVersion;
 import one.papachi.httpd.impl.Run;
 import one.papachi.httpd.impl.StandardHttpOptions;
@@ -18,8 +19,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
-import org.junit.jupiter.api.parallel.Execution;
-import org.junit.jupiter.api.parallel.ExecutionMode;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -33,12 +32,10 @@ import java.security.NoSuchAlgorithmException;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
 import java.util.Arrays;
-import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.atomic.AtomicInteger;
 
-@Disabled
+//@Disabled
 public class Http20ConcurrencyTests {
 
     private static final String protocol = "https";
@@ -56,8 +53,6 @@ public class Http20ConcurrencyTests {
     private static HttpServer server;
 
     private static HttpClient clientA, clientB, clientC, clientD, clientE, clientF, clientG, clientH, clientI, clientJ;
-
-    private static AtomicInteger counter = new AtomicInteger(0);
 
     private static byte[] body;
 
@@ -78,13 +73,13 @@ public class Http20ConcurrencyTests {
         clientJ = new DefaultHttpClient();
         server = getServer();
         server.setHttpHandler(request -> {
-            System.out.println(counter.incrementAndGet());
             CompletableFuture<HttpResponse> future = new CompletableFuture<>();
             Run.async(() -> {
                 DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
-                builder.addHeader("Server", "papachi-httpd/1.0");
-                builder.addHeader("Content-Type", "application/octet-stream");
-                builder.setBody(body);
+                builder.status(HttpStatus.STATUS_200_OK);
+                builder.header("Server", "papachi-httpd/1.0");
+                builder.header("Content-Type", "application/octet-stream");
+                builder.body(body);
                 HttpResponse response = builder.build();
                 future.complete(response);
             });
@@ -125,9 +120,9 @@ public class Http20ConcurrencyTests {
     @DisplayName("GET / HTTP/2 -> 200 OK")
     void getHttp2a() throws IOException, ExecutionException, InterruptedException, NoSuchAlgorithmException {
         DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-        builder.setMethod(HttpMethod.GET).setPath("/").setVersion(HttpVersion.HTTP_2);
+        builder.GET().path("/").http2();
         HttpRequest request = builder.build();
-        HttpResponse response = new DefaultHttpClient().send(getURL(), request).get();
+        HttpResponse response = clientA.send(getURL(), request).get();
         String digest = Util.digest(response.getHttpBody());
         Assertions.assertEquals("QfVdjAZFqlPWZ04dtjSuPVAlfNY=", digest);
     }
@@ -137,7 +132,7 @@ public class Http20ConcurrencyTests {
     @DisplayName("GET / HTTP/2 -> 200 OK")
     void getHttp2b() throws MalformedURLException, ExecutionException, InterruptedException {
         DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-        builder.setMethod(HttpMethod.GET).setPath("/").setVersion(HttpVersion.HTTP_2);
+        builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_2);
         HttpRequest request = builder.build();
         HttpResponse response = clientB.send(getURL(), request).get();
         byte[] responseBody = Util.readBytes(response.getHttpBody());
@@ -149,7 +144,7 @@ public class Http20ConcurrencyTests {
     @DisplayName("GET / HTTP/2 -> 200 OK")
     void getHttp2c() throws MalformedURLException, ExecutionException, InterruptedException {
         DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-        builder.setMethod(HttpMethod.GET).setPath("/").setVersion(HttpVersion.HTTP_2);
+        builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_2);
         HttpRequest request = builder.build();
         HttpResponse response = clientC.send(getURL(), request).get();
         byte[] responseBody = Util.readBytes(response.getHttpBody());
@@ -161,7 +156,7 @@ public class Http20ConcurrencyTests {
     @DisplayName("GET / HTTP/2 -> 200 OK")
     void getHttp2d() throws MalformedURLException, ExecutionException, InterruptedException {
         DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-        builder.setMethod(HttpMethod.GET).setPath("/").setVersion(HttpVersion.HTTP_2);
+        builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_2);
         HttpRequest request = builder.build();
         HttpResponse response = clientD.send(getURL(), request).get();
         byte[] responseBody = Util.readBytes(response.getHttpBody());
@@ -173,7 +168,7 @@ public class Http20ConcurrencyTests {
     @DisplayName("GET / HTTP/2 -> 200 OK")
     void getHttp2e() throws MalformedURLException, ExecutionException, InterruptedException {
         DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-        builder.setMethod(HttpMethod.GET).setPath("/").setVersion(HttpVersion.HTTP_2);
+        builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_2);
         HttpRequest request = builder.build();
         HttpResponse response = clientE.send(getURL(), request).get();
         byte[] responseBody = Util.readBytes(response.getHttpBody());
@@ -185,7 +180,7 @@ public class Http20ConcurrencyTests {
     @DisplayName("GET / HTTP/2 -> 200 OK")
     void getHttp2f() throws MalformedURLException, ExecutionException, InterruptedException {
         DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-        builder.setMethod(HttpMethod.GET).setPath("/").setVersion(HttpVersion.HTTP_2);
+        builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_2);
         HttpRequest request = builder.build();
         HttpResponse response = clientF.send(getURL(), request).get();
         byte[] responseBody = Util.readBytes(response.getHttpBody());
@@ -197,7 +192,7 @@ public class Http20ConcurrencyTests {
     @DisplayName("GET / HTTP/2 -> 200 OK")
     void getHttp2g() throws MalformedURLException, ExecutionException, InterruptedException {
         DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-        builder.setMethod(HttpMethod.GET).setPath("/").setVersion(HttpVersion.HTTP_2);
+        builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_2);
         HttpRequest request = builder.build();
         HttpResponse response = clientG.send(getURL(), request).get();
         byte[] responseBody = Util.readBytes(response.getHttpBody());
@@ -209,7 +204,7 @@ public class Http20ConcurrencyTests {
     @DisplayName("GET / HTTP/2 -> 200 OK")
     void getHttp2h() throws MalformedURLException, ExecutionException, InterruptedException {
         DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-        builder.setMethod(HttpMethod.GET).setPath("/").setVersion(HttpVersion.HTTP_2);
+        builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_2);
         HttpRequest request = builder.build();
         HttpResponse response = clientH.send(getURL(), request).get();
         byte[] responseBody = Util.readBytes(response.getHttpBody());
@@ -221,7 +216,7 @@ public class Http20ConcurrencyTests {
     @DisplayName("GET / HTTP/2 -> 200 OK")
     void getHttp2i() throws MalformedURLException, ExecutionException, InterruptedException {
         DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-        builder.setMethod(HttpMethod.GET).setPath("/").setVersion(HttpVersion.HTTP_2);
+        builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_2);
         HttpRequest request = builder.build();
         HttpResponse response = clientI.send(getURL(), request).get();
         byte[] responseBody = Util.readBytes(response.getHttpBody());
@@ -233,7 +228,7 @@ public class Http20ConcurrencyTests {
     @DisplayName("GET / HTTP/2 -> 200 OK")
     void getHttp2j() throws MalformedURLException, ExecutionException, InterruptedException {
         DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-        builder.setMethod(HttpMethod.GET).setPath("/").setVersion(HttpVersion.HTTP_2);
+        builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_2);
         HttpRequest request = builder.build();
         HttpResponse response = clientJ.send(getURL(), request).get();
         byte[] responseBody = Util.readBytes(response.getHttpBody());

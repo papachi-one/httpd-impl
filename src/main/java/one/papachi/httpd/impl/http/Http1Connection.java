@@ -202,7 +202,7 @@ public abstract class Http1Connection implements Runnable {
                 if (headerLine.isEmpty()) {
                     return State.PROCESS;
                 }
-                remoteHeadersBuilder.addHeaderLine(headerLine);
+                remoteHeadersBuilder.headerLine(headerLine);
                 return State.READ_REMOTE_HEADER_LINE;
             }
             osBuffer.write(b);

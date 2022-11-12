@@ -30,18 +30,18 @@ public class Http2ServerConnection extends Http2Connection {
     @Override
     protected void handleRemote(int streamId) {
         HttpRequest.Builder builder = new DefaultHttpRequest.DefaultBuilder();
-        builder.setVersion(HttpVersion.HTTP_2);
+        builder.version(HttpVersion.HTTP_2);
         for (HttpHeader header : remoteHeaders.getHeaders()) {
             if (header.getName().equalsIgnoreCase(":method"))
-                builder.setMethod(HttpMethod.valueOf(header.getValue()));
+                builder.method(HttpMethod.valueOf(header.getValue()));
             else if (header.getName().equalsIgnoreCase(":path"))
-                builder.setPath(header.getValue());
+                builder.path(header.getValue());
             else if (header.getName().equalsIgnoreCase(":authority"))
-                builder.addHeader("Host", header.getValue());
+                builder.header("Host", header.getValue());
             else
-                builder.addHeader(header);
+                builder.header(header);
         }
-        builder.setBody(remoteBody);
+        builder.body(remoteBody);
         HttpRequest request = builder.build();
         Run.async(() -> handler.handle(request).whenComplete((response, throwable) -> onResponse(streamId, response, throwable)));
     }
@@ -52,8 +52,8 @@ public class Http2ServerConnection extends Http2Connection {
             return;
         }
         HttpHeaders.Builder builder = new DefaultHttpHeaders.DefaultBuilder();
-        builder.addHeader(":status", Integer.toString(response.getStatusCode()));
-        response.getHeaders().forEach(builder::addHeader);
+        builder.header(":status", Integer.toString(response.getStatusCode()));
+        response.getHeaders().forEach(builder::header);
         List<HttpHeader> headers = builder.build().getHeaders();
         sendLocalHeaders(streamId, headers, response.getHttpBody());
     }

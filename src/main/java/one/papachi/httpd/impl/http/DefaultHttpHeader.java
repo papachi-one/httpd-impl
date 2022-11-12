@@ -10,13 +10,13 @@ public class DefaultHttpHeader implements HttpHeader {
         private String name, value;
 
         @Override
-        public Builder setName(String name) {
+        public Builder name(String name) {
             this.name = name;
             return this;
         }
 
         @Override
-        public Builder setValue(String value) {
+        public Builder value(String value) {
             this.value = value;
             return this;
         }

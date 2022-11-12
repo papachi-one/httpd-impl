@@ -13,7 +13,6 @@ import one.papachi.httpd.impl.http.client.DefaultHttpClient;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.io.IOException;
@@ -61,9 +60,9 @@ public class Http20Tests {
         server.setHttpHandler(request -> {
             logRequest(request);
             DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
-            builder.addHeader("Server", "papachi-httpd/1.0");
-            builder.addHeader("Content-Type", "text/plain");
-            builder.setBody(body);
+            builder.header("Server", "papachi-httpd/1.0");
+            builder.header("Content-Type", "text/plain");
+            builder.body(body);
             HttpResponse response = builder.build();
             CompletableFuture<HttpResponse> future = new CompletableFuture<>();
             future.complete(response);
@@ -72,7 +71,7 @@ public class Http20Tests {
         server.start();
         DefaultHttpClient client = new DefaultHttpClient();
         DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-        builder.setMethod(HttpMethod.GET).setPath("/").setVersion(HttpVersion.HTTP_2);
+        builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_2);
         HttpRequest request = builder.build();
         HttpResponse response = client.send(getURL(getPort(server)), request).get();
         logResponse(response);
@@ -89,10 +88,10 @@ public class Http20Tests {
         server.setHttpHandler(request -> {
             logRequest(request);
             DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
-            builder.addHeader("Server", "papachi-httpd/1.0");
-            builder.addHeader("Content-Type", "text/plain");
-            builder.addHeader("Content-Length", Integer.toString(body.getBytes().length));
-            builder.setBody(body);
+            builder.header("Server", "papachi-httpd/1.0");
+            builder.header("Content-Type", "text/plain");
+            builder.header("Content-Length", Integer.toString(body.getBytes().length));
+            builder.body(body);
             HttpResponse response = builder.build();
             CompletableFuture<HttpResponse> future = new CompletableFuture<>();
             future.complete(response);
@@ -101,7 +100,7 @@ public class Http20Tests {
         server.start();
         DefaultHttpClient client = new DefaultHttpClient();
         DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-        builder.setMethod(HttpMethod.GET).setPath("/").setVersion(HttpVersion.HTTP_2);
+        builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_2);
         HttpRequest request = builder.build();
         HttpResponse response = client.send(getURL(getPort(server)), request).get();
         logResponse(response);
@@ -119,9 +118,9 @@ public class Http20Tests {
             logRequest(request);
             String requestBody = Util.readString(request.getHttpBody());
             DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
-            builder.addHeader("Server", "papachi-httpd/1.0");
-            builder.addHeader("Content-Type", "text/plain");
-            builder.setBody(requestBody);
+            builder.header("Server", "papachi-httpd/1.0");
+            builder.header("Content-Type", "text/plain");
+            builder.body(requestBody);
             HttpResponse response = builder.build();
             CompletableFuture<HttpResponse> future = new CompletableFuture<>();
             future.complete(response);
@@ -130,8 +129,8 @@ public class Http20Tests {
         server.start();
         DefaultHttpClient client = new DefaultHttpClient();
         DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-        builder.setMethod(HttpMethod.GET).setPath("/").setVersion(HttpVersion.HTTP_2);
-        builder.setBody(body);
+        builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_2);
+        builder.body(body);
         HttpRequest request = builder.build();
         HttpResponse response = client.send(getURL(getPort(server)), request).get();
         logResponse(response);
@@ -149,9 +148,9 @@ public class Http20Tests {
             logRequest(request);
             String requestBody = Util.readString(request.getHttpBody());
             DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
-            builder.addHeader("Server", "papachi-httpd/1.0");
-            builder.addHeader("Content-Type", "text/plain");
-            builder.setBody(requestBody);
+            builder.header("Server", "papachi-httpd/1.0");
+            builder.header("Content-Type", "text/plain");
+            builder.body(requestBody);
             HttpResponse response = builder.build();
             CompletableFuture<HttpResponse> future = new CompletableFuture<>();
             future.complete(response);
@@ -160,9 +159,9 @@ public class Http20Tests {
         server.start();
         DefaultHttpClient client = new DefaultHttpClient();
         DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-        builder.setMethod(HttpMethod.GET).setPath("/").setVersion(HttpVersion.HTTP_2);
-        builder.setBody(body);
-        builder.addHeader("Content-Length", Integer.toString(body.getBytes().length));
+        builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_2);
+        builder.body(body);
+        builder.header("Content-Length", Integer.toString(body.getBytes().length));
         HttpRequest request = builder.build();
         HttpResponse response = client.send(getURL(getPort(server)), request).get();
         logResponse(response);
@@ -180,10 +179,10 @@ public class Http20Tests {
             logRequest(request);
             String requestBody = Util.readString(request.getHttpBody());
             DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
-            builder.addHeader("Server", "papachi-httpd/1.0");
-            builder.addHeader("Content-Type", "text/plain");
-            builder.addHeader("Content-Length", Integer.toString(requestBody.getBytes().length));
-            builder.setBody(requestBody);
+            builder.header("Server", "papachi-httpd/1.0");
+            builder.header("Content-Type", "text/plain");
+            builder.header("Content-Length", Integer.toString(requestBody.getBytes().length));
+            builder.body(requestBody);
             HttpResponse response = builder.build();
             CompletableFuture<HttpResponse> future = new CompletableFuture<>();
             future.complete(response);
@@ -192,8 +191,8 @@ public class Http20Tests {
         server.start();
         DefaultHttpClient client = new DefaultHttpClient();
         DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-        builder.setMethod(HttpMethod.GET).setPath("/").setVersion(HttpVersion.HTTP_2);
-        builder.setBody(body);
+        builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_2);
+        builder.body(body);
         HttpRequest request = builder.build();
         HttpResponse response = client.send(getURL(getPort(server)), request).get();
         logResponse(response);
@@ -211,10 +210,10 @@ public class Http20Tests {
             logRequest(request);
             String requestBody = Util.readString(request.getHttpBody());
             DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
-            builder.addHeader("Server", "papachi-httpd/1.0");
-            builder.addHeader("Content-Type", "text/plain");
-            builder.addHeader("Content-Length", Integer.toString(requestBody.getBytes().length));
-            builder.setBody(requestBody);
+            builder.header("Server", "papachi-httpd/1.0");
+            builder.header("Content-Type", "text/plain");
+            builder.header("Content-Length", Integer.toString(requestBody.getBytes().length));
+            builder.body(requestBody);
             HttpResponse response = builder.build();
             CompletableFuture<HttpResponse> future = new CompletableFuture<>();
             future.complete(response);
@@ -223,9 +222,9 @@ public class Http20Tests {
         server.start();
         DefaultHttpClient client = new DefaultHttpClient();
         DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-        builder.setMethod(HttpMethod.GET).setPath("/").setVersion(HttpVersion.HTTP_2);
-        builder.addHeader("Content-Length", Integer.toString(body.getBytes().length));
-        builder.setBody(body);
+        builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_2);
+        builder.header("Content-Length", Integer.toString(body.getBytes().length));
+        builder.body(body);
         HttpRequest request = builder.build();
         HttpResponse response = client.send(getURL(getPort(server)), request).get();
         logResponse(response);

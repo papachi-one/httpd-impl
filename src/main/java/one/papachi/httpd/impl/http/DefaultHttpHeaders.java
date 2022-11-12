@@ -20,19 +20,19 @@ public class DefaultHttpHeaders implements HttpHeaders {
         private List<HttpHeader> headers = new ArrayList<>();
 
         @Override
-        public Builder addHeaderLine(String line) {
-            addHeader(new DefaultHttpHeader.DefaultBuilder().setHeaderLine(line).build());
+        public Builder headerLine(String line) {
+            header(new DefaultHttpHeader.DefaultBuilder().headerLine(line).build());
             return this;
         }
 
-        public Builder addHeader(HttpHeader header) {
+        public Builder header(HttpHeader header) {
             headers.add(header);
             return this;
         }
 
         @Override
-        public Builder addHeader(String name, String value) {
-            addHeader(new DefaultHttpHeader.DefaultBuilder().setName(name).setValue(value).build());
+        public Builder header(String name, String value) {
+            header(new DefaultHttpHeader.DefaultBuilder().name(name).value(value).build());
             return this;
         }
 

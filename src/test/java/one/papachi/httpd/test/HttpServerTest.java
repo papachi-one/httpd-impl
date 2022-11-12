@@ -4,13 +4,10 @@ import one.papachi.httpd.api.http.HttpBody;
 import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpResponse;
 import one.papachi.httpd.api.http.HttpServer;
-import one.papachi.httpd.api.http.HttpsTLSSupplier;
 import one.papachi.httpd.impl.Run;
 import one.papachi.httpd.impl.StandardHttpOptions;
 import one.papachi.httpd.impl.Util;
-import one.papachi.httpd.impl.http.DefaultHttpBody;
 import one.papachi.httpd.impl.http.DefaultHttpResponse;
-import one.papachi.httpd.impl.http.client.DefaultHttpClient;
 
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
@@ -37,9 +34,9 @@ public class HttpServerTest {
             CompletableFuture<HttpResponse> future = new CompletableFuture<>();
             Run.async(() -> {
                 DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
-                builder.addHeader("Server", "papachi-httpd/1.0");
-                builder.addHeader("Content-Type", "application/octet-stream");
-                builder.setBody(body);
+                builder.header("Server", "papachi-httpd/1.0");
+                builder.header("Content-Type", "application/octet-stream");
+                builder.body(body);
                 HttpResponse response = builder.build();
                 future.complete(response);
             });
@@ -81,13 +78,13 @@ public class HttpServerTest {
             outputStream.close();
         }
         DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
-        builder.addHeader("Server", "papachi-httpd/1.0");
-        builder.addHeader("Content-type", "text/plain");
+        builder.header("Server", "papachi-httpd/1.0");
+        builder.header("Content-type", "text/plain");
 //        builder.addHeader("Content-Type", "application/octet-stream");
 //        builder.addHeader("Content-Length", "3418040661");
 //        builder.setBody(new DefaultHttpBody.DefaultBuilder().setInput(Path.of("c:\\Users\\PC\\Downloads\\15W vs 25W.png")).build());
 //        builder.setBody(new DefaultHttpBody.DefaultBuilder().setInput(Path.of("c:\\Users\\PC\\Downloads\\fcp2121021.mp4")).build());
-        builder.setBody(sb.toString());
+        builder.body(sb.toString());
         return builder.build();
     }
 

@@ -50,10 +50,10 @@ public class Http1ClientConnection extends Http1Connection implements HttpClient
     protected void handleRemote() {
         HttpResponse.Builder builder = new DefaultHttpResponse.DefaultBuilder();
         String[] split = remoteLine.split(" ", 3);
-        builder.setVersion("HTTP/1.0".equals(split[0]) ? HttpVersion.HTTP_1_0 : HttpVersion.HTTP_1_1);
+        builder.version("HTTP/1.0".equals(split[0]) ? HttpVersion.HTTP_1_0 : HttpVersion.HTTP_1_1);
         int statusCode;
-        builder.setStatusCode(statusCode = Integer.parseInt(split[1]));
-        builder.setReasonPhrase(split.length == 3 ? split[2] : null);
+        builder.statusCode(statusCode = Integer.parseInt(split[1]));
+        builder.reasonPhrase(split.length == 3 ? split[2] : null);
         builder.setHeaders(remoteHeaders);
 
         String transferEncoding = remoteHeaders.getHeaderValue("Transfer-Encoding");
@@ -80,9 +80,9 @@ public class Http1ClientConnection extends Http1Connection implements HttpClient
         } else {
             readRemoteBodyUntilEos = true;
         }
-        remoteBody = new DefaultHttpBody.DefaultBuilder().setInput(hasRemoteBody ? (remoteBodyChannel = new Http1RemoteBodyChannel(() -> run(State.READ_REMOTE_BODY))) : null).build();
+        remoteBody = new DefaultHttpBody.DefaultBuilder().input(hasRemoteBody ? (remoteBodyChannel = new Http1RemoteBodyChannel(() -> run(State.READ_REMOTE_BODY))) : null).build();
 
-        builder.setBody(remoteBody);
+        builder.body(remoteBody);
         response = builder.build();
 
 
@@ -114,13 +114,13 @@ public class Http1ClientConnection extends Http1Connection implements HttpClient
         if (request.getVersion() == HttpVersion.HTTP_1_0 || "close".equals(connection))
             shutdownOutboundAfterBody = true;
         if (request.getVersion() != HttpVersion.HTTP_1_0) {
-            list.add(new DefaultHttpHeader.DefaultBuilder().setName("Connection").setValue(connection == null ? "keep-alive" : connection).build());
+            list.add(new DefaultHttpHeader.DefaultBuilder().name("Connection").value(connection == null ? "keep-alive" : connection).build());
             if (request.getHttpBody() != null && request.getHttpBody().isPresent()) {
                 if (contentLength == null || "chunked".equals(transferEncoding)) {
                     isLocalBodyChunked = true;
-                    list.add(new DefaultHttpHeader.DefaultBuilder().setName("Transfer-Encoding").setValue("chunked").build());
+                    list.add(new DefaultHttpHeader.DefaultBuilder().name("Transfer-Encoding").value("chunked").build());
                 } else {
-                    list.add(new DefaultHttpHeader.DefaultBuilder().setName("Content-Length").setValue(contentLength).build());
+                    list.add(new DefaultHttpHeader.DefaultBuilder().name("Content-Length").value(contentLength).build());
                 }
 //            } else {
 //                list.add(new DefaultHttpHeader.DefaultBuilder().setName("Content-Length").setValue("0").build());
@@ -128,7 +128,7 @@ public class Http1ClientConnection extends Http1Connection implements HttpClient
         } else {
             if (request.getHttpBody() != null && request.getHttpBody().isPresent()) {
                 if (contentLength != null) {
-                    list.add(new DefaultHttpHeader.DefaultBuilder().setName("Content-Length").setValue(contentLength).build());
+                    list.add(new DefaultHttpHeader.DefaultBuilder().name("Content-Length").value(contentLength).build());
                 }
             }
         }
