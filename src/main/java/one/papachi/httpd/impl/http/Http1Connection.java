@@ -7,16 +7,14 @@ import one.papachi.httpd.api.http.HttpHeaders;
 import one.papachi.httpd.impl.CustomDataBuffer;
 import one.papachi.httpd.impl.Run;
 import one.papachi.httpd.impl.StandardHttpOptions;
+import one.papachi.httpd.impl.http.data.DefaultHttpHeaders;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -361,15 +359,6 @@ public abstract class Http1Connection implements Runnable {
                 run(State.ERROR);
             }
         });
-    }
-
-    private static String getSecWebSocketAccept(String secWebSocketKey) {
-        try {
-            return Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-1").digest((secWebSocketKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException e) {
-            e.printStackTrace();
-        }
-        return "";
     }
 
 }

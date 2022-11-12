@@ -8,6 +8,8 @@ import one.papachi.httpd.impl.Run;
 import one.papachi.httpd.impl.StandardHttpOptions;
 import one.papachi.httpd.impl.hpack.Decoder;
 import one.papachi.httpd.impl.hpack.Encoder;
+import one.papachi.httpd.impl.http.data.DefaultHttpBody;
+import one.papachi.httpd.impl.http.data.DefaultHttpHeaders;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;

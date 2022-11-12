@@ -7,15 +7,20 @@ import one.papachi.httpd.api.http.HttpMethod;
 import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpResponse;
 import one.papachi.httpd.api.http.HttpVersion;
-import one.papachi.httpd.impl.http.DefaultHttpBody;
-import one.papachi.httpd.impl.http.DefaultHttpHeader;
-import one.papachi.httpd.impl.http.DefaultHttpRequest;
+import one.papachi.httpd.api.websocket.WebSocketHandler;
 import one.papachi.httpd.impl.http.Http1Connection;
 import one.papachi.httpd.impl.http.Http1RemoteBodyChannel;
+import one.papachi.httpd.impl.http.data.DefaultHttpBody;
+import one.papachi.httpd.impl.http.data.DefaultHttpHeader;
+import one.papachi.httpd.impl.http.data.DefaultHttpRequest;
 
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 
@@ -27,9 +32,12 @@ public class Http1ServerConnection extends Http1Connection {
 
     protected final HttpHandler handler;
 
-    public Http1ServerConnection(AsynchronousSocketChannel channel, HttpHandler handler) {
+    protected final WebSocketHandler webSockethandler;
+
+    public Http1ServerConnection(AsynchronousSocketChannel channel, HttpHandler handler, WebSocketHandler webSocketHandler) {
         super(channel);
         this.handler = handler;
+        this.webSockethandler = webSocketHandler;
         run(State.READ_REMOTE);
     }
 
@@ -77,6 +85,23 @@ public class Http1ServerConnection extends Http1Connection {
         builder.headers(remoteHeaders);
         builder.body(remoteBody);
         request = builder.build();
+
+
+//        if ("websocket".equalsIgnoreCase(request.getHeaderValue("Upgrade"))
+//                && "upgrade".equalsIgnoreCase(request.getHeaderValue("Connection"))
+//                && request.getHeaderValue("Sec-WebSocket-Key") != null
+//                && Optional.ofNullable(request.getHeaderValue("Sec-WebSocket-Version")).orElse("").contains("13")) {
+//            byte[] response = ("HTTP/1.1 101 Switching Protocols\r\n" +
+//                    "Upgrade: websocket\r\n" +
+//                    "Connection: upgrade\r\n" +
+//                    "Sec-WebSocket-Accept: " + getSecWebSocketAccept(request.getHeaderValue("Sec-WebSocket-Key").trim()) + "\r\n" +
+//                    "\r\n").getBytes();
+//            write(ByteBuffer.wrap(response), ignored -> {
+//                new DefaultWebSocketConnection(DefaultWebSocketConnection.Mode.SERVER, channel, readBuffer, request, webSockethandler);
+//            });
+//            return;
+//        }
+
 
         handler.handle(request).whenComplete(this::onResponse);
     }
@@ -129,6 +154,15 @@ public class Http1ServerConnection extends Http1Connection {
     @Override
     protected HttpBody getLocalBody() {
         return response.getHttpBody();
+    }
+
+    private static String getSecWebSocketAccept(String secWebSocketKey) {
+        try {
+            return Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-1").digest((secWebSocketKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        }
+        return "";
     }
 
 }

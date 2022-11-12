@@ -1,15 +1,19 @@
 package one.papachi.httpd.test;
 
+import one.papachi.httpd.api.http.HttpBody;
 import one.papachi.httpd.api.http.HttpServer;
 import one.papachi.httpd.api.http.HttpsTLSSupplier;
-import one.papachi.httpd.api.websocket.WebSocketFrameHandler;
-import one.papachi.httpd.api.websocket.WebSocketMessageHandler;
+import one.papachi.httpd.api.websocket.WebSocketFrameListener;
+import one.papachi.httpd.api.websocket.WebSocketMessageListener;
 import one.papachi.httpd.api.websocket.WebSocketSession;
-import one.papachi.httpd.api.websocket.WebSocketStreamHandler;
+import one.papachi.httpd.api.websocket.WebSocketStreamListener;
 import one.papachi.httpd.impl.StandardHttpOptions;
 import one.papachi.httpd.impl.Util;
 
 import java.net.InetSocketAddress;
+import java.net.http.WebSocket;
+import java.nio.ByteBuffer;
+import java.util.concurrent.ExecutionException;
 
 public class WebSocketTest {
 
@@ -26,10 +30,25 @@ public class WebSocketTest {
     }
 
     private static void handle(WebSocketSession webSocketSession) {
-        WebSocketStreamHandler streamHandler = data -> System.out.println(Util.readString(data));
-        WebSocketMessageHandler messageHandler = data -> System.out.println(Util.readString(data));
-        WebSocketFrameHandler frameHandler = data -> System.out.println(Util.readString(data));
-        webSocketSession.setHandler(messageHandler);
+        System.out.println(webSocketSession.getRequest().getPath());
+        WebSocketStreamListener streamListener = data -> System.out.println(Util.readString(data));
+        WebSocketMessageListener messageListener = data -> System.out.println(Util.readString(data));
+        WebSocketFrameListener frameListener = data -> System.out.println(Util.readString(data));
+
+        WebSocketMessageListener messageEchoListener = data -> {
+            try {
+                if (data == null) {
+                    webSocketSession.sendClose();
+                    return;
+                }
+                byte[] bytes = Util.readBytes(data);
+                HttpBody src = HttpBody.getBuilder().input(bytes).build();
+                webSocketSession.send(src).get();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        };
+        webSocketSession.setListener(messageEchoListener);
     }
 
 }

@@ -6,9 +6,9 @@ import one.papachi.httpd.api.http.HttpOptions;
 import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpResponse;
 import one.papachi.httpd.api.http.HttpVersion;
-import one.papachi.httpd.impl.http.DefaultHttpHeader;
-import one.papachi.httpd.impl.http.DefaultHttpHeaders;
-import one.papachi.httpd.impl.http.DefaultHttpResponse;
+import one.papachi.httpd.impl.http.data.DefaultHttpHeader;
+import one.papachi.httpd.impl.http.data.DefaultHttpHeaders;
+import one.papachi.httpd.impl.http.data.DefaultHttpResponse;
 import one.papachi.httpd.impl.http.Http2Connection;
 import one.papachi.httpd.impl.http.Http2ConnectionIO;
 

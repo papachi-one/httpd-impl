@@ -211,7 +211,7 @@ public class DefaultHttpServer implements HttpServer, Runnable {
         }
         AsynchronousSocketChannel theChannel = channel;
         switch (applicationProtocol) {
-            case "http/1.1" -> executorService.execute(new Http1ServerConnection(theChannel, getHttpHandler()));
+            case "http/1.1" -> executorService.execute(new Http1ServerConnection(theChannel, getHttpHandler(), getWebSocketHandler()));
             case "h2" -> executorService.execute(() -> new Http2ServerConnection(this, theChannel, getHttpHandler()));
             default -> close(channel);
         }

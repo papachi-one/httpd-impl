@@ -1,38 +1,43 @@
 package one.papachi.httpd.impl.websocket;
 
 
-import one.papachi.httpd.api.websocket.WebSocketConnection;
-import one.papachi.httpd.api.websocket.WebSocketDataHandler;
+import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.websocket.WebSocketFrame;
+import one.papachi.httpd.api.websocket.WebSocketListener;
 import one.papachi.httpd.api.websocket.WebSocketMessage;
 import one.papachi.httpd.api.websocket.WebSocketSession;
 import one.papachi.httpd.impl.Run;
+import one.papachi.httpd.impl.net.GenericCompletionHandler;
 
+import java.nio.ByteBuffer;
+import java.nio.channels.AsynchronousByteChannel;
 import java.nio.channels.CompletionHandler;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 
 public class DefaultWebSocketSession implements WebSocketSession {
 
+    private final HttpRequest request;
     private final DefaultWebSocketConnection webSocketConnection;
+    private WebSocketListener handler;
 
-    private WebSocketDataHandler handler;
-
-    public DefaultWebSocketSession(DefaultWebSocketConnection webSocketConnection) {
+    public DefaultWebSocketSession(HttpRequest request, DefaultWebSocketConnection webSocketConnection) {
+        this.request = request;
         this.webSocketConnection = webSocketConnection;
     }
 
     @Override
-    public WebSocketConnection getWebSocketConnection() {
-        return webSocketConnection;
+    public HttpRequest getRequest() {
+        return request;
     }
 
     @Override
-    public WebSocketDataHandler getHandler() {
+    public WebSocketListener getListener() {
         return handler;
     }
 
     @Override
-    public void setHandler(WebSocketDataHandler handler) {
+    public void setListener(WebSocketListener handler) {
         if (this.handler != null)
             throw new IllegalStateException();
         this.handler = handler;
@@ -40,28 +45,23 @@ public class DefaultWebSocketSession implements WebSocketSession {
     }
 
     @Override
-    public boolean isClosed() {
-        return false;
-    }
-
-    @Override
-    public Future<Integer> sendWebSocketMessage(WebSocketMessage message) {
-        return null;
-    }
-
-    @Override
-    public <A> void sendWebSocketMessage(WebSocketMessage message, A attachment, CompletionHandler<Integer, ? super A> handler) {
+    public void sendClose() {
 
     }
 
     @Override
-    public Future<Void> sendWebSocketFrame(WebSocketFrame frame) {
-        return null;
+    public CompletableFuture<WebSocketSession> send(ByteBuffer src) {
+        return webSocketConnection.send(src);
     }
 
     @Override
-    public <A> void sendWebSocketFrame(WebSocketFrame frame, A attachment, CompletionHandler<Void, ? super A> handler) {
+    public CompletableFuture<WebSocketSession> send(AsynchronousByteChannel src) {
+        return webSocketConnection.send(src);
+    }
 
+    @Override
+    public CompletableFuture<WebSocketSession> send(WebSocketFrame src) {
+        return webSocketConnection.send(src);
     }
 
 }

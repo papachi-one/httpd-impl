@@ -6,8 +6,8 @@ import one.papachi.httpd.api.http.HttpMethod;
 import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpResponse;
 import one.papachi.httpd.impl.Util;
-import one.papachi.httpd.impl.http.DefaultHttpBody;
-import one.papachi.httpd.impl.http.DefaultHttpRequest;
+import one.papachi.httpd.impl.http.data.DefaultHttpBody;
+import one.papachi.httpd.impl.http.data.DefaultHttpRequest;
 import one.papachi.httpd.impl.http.client.DefaultHttpClient;
 
 import java.io.BufferedOutputStream;

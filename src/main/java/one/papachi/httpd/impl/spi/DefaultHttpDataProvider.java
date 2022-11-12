@@ -6,11 +6,11 @@ import one.papachi.httpd.api.http.HttpHeaders;
 import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpResponse;
 import one.papachi.httpd.api.spi.HttpDataProvider;
-import one.papachi.httpd.impl.http.DefaultHttpBody;
-import one.papachi.httpd.impl.http.DefaultHttpHeader;
-import one.papachi.httpd.impl.http.DefaultHttpHeaders;
-import one.papachi.httpd.impl.http.DefaultHttpRequest;
-import one.papachi.httpd.impl.http.DefaultHttpResponse;
+import one.papachi.httpd.impl.http.data.DefaultHttpBody;
+import one.papachi.httpd.impl.http.data.DefaultHttpHeader;
+import one.papachi.httpd.impl.http.data.DefaultHttpHeaders;
+import one.papachi.httpd.impl.http.data.DefaultHttpRequest;
+import one.papachi.httpd.impl.http.data.DefaultHttpResponse;
 
 public class DefaultHttpDataProvider implements HttpDataProvider {
 

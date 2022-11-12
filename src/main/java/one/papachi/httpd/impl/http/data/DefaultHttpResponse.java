@@ -1,4 +1,4 @@
-package one.papachi.httpd.impl.http;
+package one.papachi.httpd.impl.http.data;
 
 
 

@@ -11,7 +11,7 @@ import java.nio.channels.CompletionHandler;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 
-public class DefaultWebSocketFrame implements WebSocketFrame {
+public class DefaultWebSocketRemoteFrame implements WebSocketFrame {
 
     private final boolean isFin, isMask;
 
@@ -25,7 +25,7 @@ public class DefaultWebSocketFrame implements WebSocketFrame {
 
     private final AsynchronousByteChannel channel;
 
-    public DefaultWebSocketFrame(boolean isFin, boolean isMask, Type type, long length, byte[] mask, AsynchronousByteChannel channel) {
+    public DefaultWebSocketRemoteFrame(boolean isFin, boolean isMask, Type type, long length, byte[] mask, AsynchronousByteChannel channel) {
         this.isFin = isFin;
         this.isMask = isMask;
         this.type = type;

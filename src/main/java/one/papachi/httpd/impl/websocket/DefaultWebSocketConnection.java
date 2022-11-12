@@ -2,19 +2,25 @@ package one.papachi.httpd.impl.websocket;
 
 
 import one.papachi.httpd.api.http.HttpConnection;
-import one.papachi.httpd.api.http.HttpServer;
+import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.websocket.WebSocketConnection;
 import one.papachi.httpd.api.websocket.WebSocketFrame;
-import one.papachi.httpd.api.websocket.WebSocketFrameHandler;
-import one.papachi.httpd.api.websocket.WebSocketMessageHandler;
+import one.papachi.httpd.api.websocket.WebSocketFrameListener;
+import one.papachi.httpd.api.websocket.WebSocketHandler;
+import one.papachi.httpd.api.websocket.WebSocketMessageListener;
 import one.papachi.httpd.api.websocket.WebSocketSession;
-import one.papachi.httpd.api.websocket.WebSocketStreamHandler;
+import one.papachi.httpd.api.websocket.WebSocketStreamListener;
 import one.papachi.httpd.impl.Run;
 
 import java.nio.ByteBuffer;
+import java.nio.channels.AsynchronousByteChannel;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
+import java.util.LinkedList;
 import java.util.Optional;
+import java.util.Queue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class DefaultWebSocketConnection implements WebSocketConnection, Runnable {
 
@@ -33,28 +39,32 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
     }
 
     enum State {
-        READ, READ_FRAME, READ_FIRST_BYTE, READ_SECOND_BYTE, READ_LENGTH, READ_MASK, PROCESS_FRAME, READ_PAYLOAD, SKIP_PAYLOAD, BREAK, ERROR, CLOSED
+        READ, READ_FRAME, READ_FIRST_BYTE, READ_SECOND_BYTE, READ_LENGTH, READ_MASK, PROCESS_FRAME, READ_PAYLOAD, SKIP_PAYLOAD, BREAK, ERROR
     }
 
-    private final HttpServer server;
+    protected final AsynchronousSocketChannel channel;
 
-    private final AsynchronousSocketChannel channel;
+    protected final ByteBuffer readBuffer;
 
-    private final ByteBuffer readBuffer;
+    protected volatile State state = State.READ_FRAME, resumeState;
 
-    private volatile State state = State.READ_FRAME, resumeState;
+    protected final DefaultWebSocketSession webSocketSession;
 
-    private final DefaultWebSocketSession webSocketSession;
+    private record WriteOperation(ByteBuffer buffer, Runnable runnable) {
+    }
 
-    public DefaultWebSocketConnection(Mode mode, HttpServer server, AsynchronousSocketChannel channel, ByteBuffer readBuffer) {
-        this.server = server;
+    protected final Queue<WriteOperation> writeQueue = new LinkedList<>();
+
+    protected final AtomicReference<Boolean> amIWriting = new AtomicReference<>(false);
+
+    public DefaultWebSocketConnection(Mode mode, AsynchronousSocketChannel channel, ByteBuffer readBuffer, HttpRequest request, WebSocketHandler handler) {
         this.channel = channel;
         this.readBuffer = readBuffer;
-        this.webSocketSession = new DefaultWebSocketSession(this);
-        server.getWebSocketHandler().handle(webSocketSession);
+        this.webSocketSession = new DefaultWebSocketSession(request, this);
+        handler.handle(webSocketSession);
     }
 
-    private void run(State state) {
+    protected void run(State state) {
         this.state = state;
         run();
     }
@@ -94,7 +104,7 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
         }
     }
 
-    private State read() {
+    protected State read() {
         channel.read(readBuffer.compact(), null, new CompletionHandler<Integer, Void>() {
             @Override
             public void completed(Integer result, Void attachment) {
@@ -114,7 +124,7 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
         return State.BREAK;
     }
 
-    private State readFrame() {
+    protected State readFrame() {
         counter = 0;
         return State.READ_FIRST_BYTE;
     }
@@ -123,12 +133,12 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
         CONTINUATION_FRAME, TEXT_FRAME, BINARY_FRAME, NON_CONTROL_FRAME_3, NON_CONTROL_FRAME_4, NON_CONTROL_FRAME_5, NON_CONTROL_FRAME_6, NON_CONTROL_FRAME_7, CONNECTION_CLOSE, PING_FRAME, PONG_FRAME, CONTROL_FRAME_B, CONTROL_FRAME_C, CONTROL_FRAME_D, CONTROL_FRAME_E, CONTROL_FRAME_F
     }
 
-    private volatile boolean isFin, isReserved1, isReserved2, isReserved3, isMask;
-    private volatile OpCode opCode;
-    private volatile long counter, length;
-    private volatile byte[] mask;
+    protected volatile boolean isFin, isReserved1, isReserved2, isReserved3, isMask;
+    protected volatile OpCode opCode;
+    protected volatile long counter, length;
+    protected volatile byte[] mask;
 
-    private State readFirstByte() {
+    protected State readFirstByte() {
         if (readBuffer.hasRemaining()) {
             byte b = readBuffer.get();
             this.isFin = (b & 0x80) != 0;
@@ -142,7 +152,7 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
         return State.READ;
     }
 
-    private State readSecondByte() {
+    protected State readSecondByte() {
         if (readBuffer.hasRemaining()) {
             byte b = readBuffer.get();
             this.isMask = (b & 0x80) != 0;
@@ -153,7 +163,7 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
         return State.READ;
     }
 
-    private State readLength() {
+    protected State readLength() {
         if (length < 126) {
             return State.READ_MASK;
         } else if ((length == 126 && readBuffer.remaining() >= 2) || readBuffer.remaining() >= 8) {
@@ -164,7 +174,7 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
         return State.READ;
     }
 
-    private State readMask() {
+    protected State readMask() {
         if (readBuffer.remaining() >= 4) {
             mask = new byte[]{readBuffer.get(), readBuffer.get(), readBuffer.get(), readBuffer.get()};
             return State.PROCESS_FRAME;
@@ -173,13 +183,13 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
         return State.READ;
     }
 
-    private volatile DefaultWebSocketFrame frame;
+    protected volatile DefaultWebSocketRemoteFrame frame;
 
-    private volatile WebSocketRemoteDataChannel dataChannel;
+    protected volatile WebSocketRemoteDataChannel dataChannel;
 
-    private State processFrame() {
-        frame = new DefaultWebSocketFrame(isFin, isMask, WebSocketFrame.Type.values()[opCode.ordinal()], length, mask, dataChannel = new WebSocketRemoteDataChannel(mask, () -> run(State.READ_PAYLOAD)));
-        if ((opCode == OpCode.TEXT_FRAME || opCode == OpCode.BINARY_FRAME) && webSocketSession.getHandler() instanceof WebSocketFrameHandler handler) {
+    protected State processFrame() {
+        frame = new DefaultWebSocketRemoteFrame(isFin, isMask, WebSocketFrame.Type.values()[opCode.ordinal()], length, mask, dataChannel = new WebSocketRemoteDataChannel(mask, () -> run(State.READ_PAYLOAD)));
+        if ((opCode == OpCode.TEXT_FRAME || opCode == OpCode.BINARY_FRAME) && webSocketSession.getListener() instanceof WebSocketFrameListener handler) {
             handler.onFrame(frame);
             return State.BREAK;
         }
@@ -192,7 +202,7 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
         };
     }
 
-    private State readPayload() {
+    protected State readPayload() {
         if (counter == length) {
             dataChannel.closeInbound();
             return State.READ_FRAME;
@@ -210,7 +220,7 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
         return State.READ;
     }
 
-    private State skipPayload() {
+    protected State skipPayload() {
         int offset = (int) Math.min(readBuffer.remaining(), length - counter);
         readBuffer.position(readBuffer.position() + offset);
         counter += offset;
@@ -221,43 +231,168 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
         return State.READ;
     }
 
-    private volatile DefaultWebSocketMessage message;
+    protected volatile DefaultWebSocketRemoteMessage message;
 
-    private volatile DefaultWebSocketStream stream;
+    protected volatile DefaultWebSocketRemoteStream stream;
 
-    private State textBinaryFrame() {
-        message = new DefaultWebSocketMessage(frame);
+    protected State textBinaryFrame() {
+        message = new DefaultWebSocketRemoteMessage(frame);
         if (stream == null) {
-            stream = new DefaultWebSocketStream();
-            if (webSocketSession.getHandler() instanceof WebSocketStreamHandler handler) {
+            stream = new DefaultWebSocketRemoteStream();
+            if (webSocketSession.getListener() instanceof WebSocketStreamListener handler) {
                 Run.async(() -> handler.onStream(stream));
             }
         }
-        if (webSocketSession.getHandler() instanceof WebSocketMessageHandler handler) {
+        if (webSocketSession.getListener() instanceof WebSocketMessageListener handler) {
             Run.async(() -> handler.onMessage(message));
         }
         stream.put(message);
         return State.BREAK;
     }
 
-    private State continuationFrame() {
+    protected State continuationFrame() {
         message.put(frame);
         return State.BREAK;
     }
 
-    private State pingFrame() {
+    protected State pingFrame() {
         return State.READ_FRAME;
     }
 
-    private State connectionCloseFrame() {
-        Optional.ofNullable(stream).ifPresent(DefaultWebSocketStream::closeInbound);
-        if (webSocketSession.getHandler() instanceof WebSocketFrameHandler handler) {
+    protected State connectionCloseFrame() {
+        Optional.ofNullable(stream).ifPresent(DefaultWebSocketRemoteStream::closeInbound);
+        if (webSocketSession.getListener() instanceof WebSocketFrameListener handler) {
             Run.async(() -> handler.onFrame(null));
         }
-        if (webSocketSession.getHandler() instanceof WebSocketMessageHandler handler) {
+        if (webSocketSession.getListener() instanceof WebSocketMessageListener handler) {
             Run.async(() -> handler.onMessage(null));
         }
-        return State.CLOSED;
+        return State.BREAK;
+    }
+
+    public CompletableFuture<WebSocketSession> send(ByteBuffer src) {
+        CompletableFuture<WebSocketSession> completableFuture = new CompletableFuture<>();
+        int length = src.remaining();
+        boolean isFin = true;
+        boolean isMask = false;
+        byte opCode = 0x02;
+        byte lengthByte;
+        byte[] lengthBytes;
+        if (length < 126) {
+            lengthByte = (byte) length;
+            lengthBytes = new byte[0];
+        } else if (length < 65536) {
+            lengthByte = 126;
+            ByteBuffer.wrap(lengthBytes = new byte[2]).putShort((short) length);
+        } else {
+            lengthByte = 127;
+            ByteBuffer.wrap(lengthBytes = new byte[8]).putLong(length);
+        }
+        byte firstByte = opCode;
+        if (isFin)
+            firstByte |= 0x80;
+        byte secondByte = lengthByte;
+        if (isMask)
+            secondByte |= 0x80;
+        ByteBuffer buffer = ByteBuffer.allocate(1 + 1 + lengthBytes.length);
+        buffer.put(firstByte).put(secondByte).put(lengthBytes).flip();
+        channel.write(buffer, buffer, new CompletionHandler<>() {
+            @Override
+            public void completed(Integer result, ByteBuffer attachment) {
+                if (attachment.hasRemaining()) {
+                    channel.write(attachment, attachment, this);
+                } else if (attachment == buffer) {
+                    channel.write(src, src, this);
+                } else {
+                    completableFuture.complete(webSocketSession);
+                }
+            }
+
+            @Override
+            public void failed(Throwable exc, ByteBuffer attachment) {
+                exc.printStackTrace();
+            }
+        });
+        return completableFuture;
+    }
+
+    public CompletableFuture<WebSocketSession> send(AsynchronousByteChannel src) {
+        CompletableFuture<WebSocketSession> completableFuture = new CompletableFuture<>();
+        ByteBuffer buffer = ByteBuffer.allocate(64 * 1024);
+        long counter = 0L;
+        try {
+            while (true) {
+                int result = src.read(buffer.clear()).get();
+                buffer.flip();
+                if (result == -1) {
+                    int length = 0;
+                    boolean isFin = true;
+                    boolean isMask = false;
+                    byte opCode = 0x00;
+                    byte lengthByte;
+                    byte[] lengthBytes;
+                    if (length < 126) {
+                        lengthByte = (byte) length;
+                        lengthBytes = new byte[0];
+                    } else if (length < 65536) {
+                        lengthByte = 126;
+                        ByteBuffer.wrap(lengthBytes = new byte[2]).putShort((short) length);
+                    } else {
+                        lengthByte = 127;
+                        ByteBuffer.wrap(lengthBytes = new byte[8]).putLong(length);
+                    }
+                    byte firstByte = opCode;
+                    if (isFin)
+                        firstByte |= 0x80;
+                    byte secondByte = lengthByte;
+                    if (isMask)
+                        secondByte |= 0x80;
+                    buffer.clear().put(firstByte).put(secondByte).put(lengthBytes).flip();
+                    while (buffer.hasRemaining()) {
+                        channel.write(buffer).get();
+                    }
+                    break;
+                }
+                int length = buffer.remaining();
+                boolean isFin = false;
+                boolean isMask = false;
+                byte opCode = (byte) (counter == 0 ? 0x01 : 0x00);
+                byte lengthByte;
+                byte[] lengthBytes;
+                if (length < 126) {
+                    lengthByte = (byte) length;
+                    lengthBytes = new byte[0];
+                } else if (length < 65536) {
+                    lengthByte = 126;
+                    ByteBuffer.wrap(lengthBytes = new byte[2]).putShort((short) length);
+                } else {
+                    lengthByte = 127;
+                    ByteBuffer.wrap(lengthBytes = new byte[8]).putLong(length);
+                }
+                byte firstByte = opCode;
+                if (isFin)
+                    firstByte |= 0x80;
+                byte secondByte = lengthByte;
+                if (isMask)
+                    secondByte |= 0x80;
+                ByteBuffer header = ByteBuffer.allocate(1 + 1 + lengthBytes.length);
+                header.clear().put(firstByte).put(secondByte).put(lengthBytes).flip();
+                while (header.hasRemaining()) {
+                    channel.write(header).get();
+                }
+                while (buffer.hasRemaining()) {
+                    channel.write(buffer).get();
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return completableFuture;
+    }
+
+    public CompletableFuture<WebSocketSession> send(WebSocketFrame src) {
+        CompletableFuture<WebSocketSession> completableFuture = new CompletableFuture<>();
+        return completableFuture;
     }
 
 }

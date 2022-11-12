@@ -15,7 +15,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class DefaultWebSocketStream implements WebSocketStream {
+public class DefaultWebSocketRemoteStream implements WebSocketStream {
 
     private final Object lock = new Object();
 

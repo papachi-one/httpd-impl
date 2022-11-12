@@ -7,13 +7,58 @@ import one.papachi.httpd.impl.PendingReadOperation;
 import one.papachi.httpd.impl.net.GenericCompletionHandler;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.channels.AsynchronousByteChannel;
+import java.nio.channels.AsynchronousFileChannel;
 import java.nio.channels.CompletionHandler;
+import java.nio.channels.ReadableByteChannel;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class DefaultWebSocketMessage implements WebSocketMessage {
+public class DefaultWebSocketRemoteMessage implements WebSocketMessage {
+
+    public static class DefaultBuilder implements Builder {
+
+        private Type type = Type.BINARY;
+        private Object input;
+
+        @Override
+        public Builder type(Type type) {
+            this.type = type;
+            return this;
+        }
+
+        @Override
+        public Builder input(AsynchronousByteChannel channel) {
+            input = channel;
+            return this;
+        }
+
+        @Override
+        public Builder input(AsynchronousFileChannel channel) {
+            input = channel;
+            return this;
+        }
+
+        @Override
+        public Builder input(ReadableByteChannel channel) {
+            input = channel;
+            return this;
+        }
+
+        @Override
+        public Builder input(InputStream inputStream) {
+            input = inputStream;
+            return this;
+        }
+
+        @Override
+        public WebSocketMessage build() {
+            return null;
+        }
+    }
 
     private final Object lock = new Object();
 
@@ -23,7 +68,7 @@ public class DefaultWebSocketMessage implements WebSocketMessage {
 
     protected WebSocketFrame frame;
 
-    public DefaultWebSocketMessage(WebSocketFrame frame) {
+    public DefaultWebSocketRemoteMessage(WebSocketFrame frame) {
         this.frame = frame;
         this.type = frame.getType() == WebSocketFrame.Type.TEXT_FRAME ? Type.TEXT : Type.BINARY;
     }

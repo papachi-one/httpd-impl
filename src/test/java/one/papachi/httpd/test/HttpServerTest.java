@@ -7,7 +7,7 @@ import one.papachi.httpd.api.http.HttpServer;
 import one.papachi.httpd.impl.Run;
 import one.papachi.httpd.impl.StandardHttpOptions;
 import one.papachi.httpd.impl.Util;
-import one.papachi.httpd.impl.http.DefaultHttpResponse;
+import one.papachi.httpd.impl.http.data.DefaultHttpResponse;
 
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
