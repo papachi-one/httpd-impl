@@ -35,8 +35,8 @@ public class Http2RemoteBodyChannel implements AsynchronousByteChannel {
     public void put(ByteBuffer data) {
         synchronized (lock) {
             readBuffer.compact().put(data).flip();
+            transfer();
         }
-        transfer();
     }
 
     public void closeInbound() {
@@ -69,8 +69,8 @@ public class Http2RemoteBodyChannel implements AsynchronousByteChannel {
                     dst.put(readBuffer.get());
                     counter++;
                 }
-                listener.accept(counter);
                 int result = counter;
+                listener.accept(result);
                 Run.async(() -> readOp.complete(result));
             }
         }

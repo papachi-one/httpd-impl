@@ -1,7 +1,6 @@
 package one.papachi.httpd.impl.http;
 
 
-import one.papachi.httpd.impl.CustomDataBuffer;
 import one.papachi.httpd.impl.Run;
 
 import java.nio.ByteBuffer;
@@ -23,13 +22,14 @@ public class Http2ConnectionIO implements Runnable {
     }
 
     public enum State {
-        READ, READ_MORE, READ_MAGIC, READ_FRAME_HEADER, READ_FRAME_PAYLOAD, PROCESS_FRAME, ERROR, BREAK
+        READ_MORE, READ_MAGIC, READ_FRAME_HEADER, READ_FRAME_PAYLOAD, PROCESS_FRAME, ERROR, BREAK
     }
 
+    protected final Object lock = new Object();
     protected final AsynchronousSocketChannel channel;
-    protected final ByteBuffer readBuffer;
+    protected volatile ByteBuffer readBuffer;
     protected final Function<Http2Frame, State> listener;
-    protected final int maxFrameSize;
+    protected final Http2Settings localSettings;
     protected volatile State state, resumeState;
     protected volatile int length;
 
@@ -46,61 +46,64 @@ public class Http2ConnectionIO implements Runnable {
     public Http2ConnectionIO(Mode mode, AsynchronousSocketChannel channel, Http2Settings localSettings, Function<Http2Frame, State> listener) {
         this.channel = channel;
         this.readBuffer = ByteBuffer.allocate(localSettings.getMaxFrameSize()).flip();
+        this.localSettings = localSettings;
         this.listener = listener;
-        this.maxFrameSize = localSettings.getMaxFrameSize();
-        run(mode == Mode.SERVER ? State.READ_MAGIC : State.READ_FRAME_HEADER);
     }
 
     public ByteBuffer getReadBuffer() {
         return readBuffer;
     }
 
-    private void run(State state) {
-        this.state = state;
+    public void run(State state) {
+        synchronized (lock) {
+            this.state = state;
+        }
         run();
     }
 
     @Override
     public void run() {
-        while (true) {
-            if (state == State.READ) {
-                if (readBuffer.hasRemaining()) {
-                    state = resumeState;
-                } else {
+        synchronized (lock) {
+            while (true) {
+                if (state == State.READ_MORE) {
                     state = State.BREAK;
-                    read();
+                    readBuffer.compact();
+                    Run.async(() -> read());
                     break;
+                } else if (state == State.READ_MAGIC) {
+                    state = readMagic();
+                } else if (state == State.READ_FRAME_HEADER) {
+                    state = readFrameHeader();
+                } else if (state == State.READ_FRAME_PAYLOAD) {
+                    state = readFramePayload();
+                } else if (state == State.PROCESS_FRAME) {
+                    state = processFrame();
+                    if (localSettings.getMaxFrameSize() > readBuffer.capacity()) {
+                        ByteBuffer buffer = ByteBuffer.allocate(localSettings.getMaxFrameSize());
+                        buffer.put(readBuffer).flip();
+                        readBuffer = buffer;
+                    }
+                } else if (state == State.ERROR) {
+                    state = close();
                 }
-            } else if (state == State.READ_MORE) {
-                state = State.BREAK;
-                read();
-                break;
-            } else if (state == State.READ_MAGIC) {
-                state = readMagic();
-            } else if (state == State.READ_FRAME_HEADER) {
-                state = readFrameHeader();
-            } else if (state == State.READ_FRAME_PAYLOAD) {
-                state = readFramePayload();
-            } else if (state == State.PROCESS_FRAME) {
-                state = processFrame();
-            } else if (state == State.ERROR) {
-                state = close();
+                if (state == State.BREAK)
+                    break;
             }
-            if (state == State.BREAK)
-                break;
         }
     }
 
-    private State read() {
-        channel.read(readBuffer.compact(), null, new CompletionHandler<Integer, Void>() {
+    private void read() {
+        channel.read(readBuffer, null, new CompletionHandler<Integer, Void>() {
             @Override
             public void completed(Integer result, Void attachment) {
-                if (result == -1) {
-                    run(State.ERROR);
-                    return;
+                synchronized (lock) {
+                    if (result == -1) {
+                        run(State.ERROR);
+                        return;
+                    }
+                    readBuffer.flip();
+                    run(resumeState);
                 }
-                readBuffer.flip();
-                run(resumeState);
             }
 
             @Override
@@ -109,7 +112,6 @@ public class Http2ConnectionIO implements Runnable {
                 run(State.ERROR);
             }
         });
-        return State.BREAK;
     }
 
     private State readMagic() {
@@ -137,7 +139,7 @@ public class Http2ConnectionIO implements Runnable {
             readBuffer.position(readBuffer.position() + 9);
             frameHeader = new Http2FrameHeader(buffer);
             length = frameHeader.getLength();
-            if (length > maxFrameSize) {
+            if (length > localSettings.getMaxFrameSize()) {
                 return State.ERROR;// error = Http2Error.FRAME_SIZE_ERROR;
             }
             return State.READ_FRAME_PAYLOAD;

@@ -4,11 +4,18 @@ import one.papachi.httpd.api.http.HttpClient;
 import one.papachi.httpd.api.http.HttpOption;
 import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpResponse;
+import one.papachi.httpd.api.http.HttpVersion;
 import one.papachi.httpd.api.http.HttpsTLSSupplier;
 import one.papachi.httpd.impl.StandardHttpOptions;
+import one.papachi.httpd.impl.Util;
+import one.papachi.httpd.impl.net.AsynchronousSecureSocketChannel;
 
+import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.URL;
 import java.nio.channels.AsynchronousSocketChannel;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -17,6 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.stream.Stream;
 
@@ -58,65 +66,113 @@ public class DefaultHttpClient implements HttpClient {
     }
 
     @Override
-    public CompletableFuture<HttpResponse> send(String host, int port, boolean https, HttpRequest request) {
-        Address address = new Address(host, port, https);
-        HttpClientConnection connection = getConnection(address);
-        return connection.send(request);
-    }
-
-    private HttpClientConnection getConnection(Address address) {
-        Stream<HttpClientConnection> stream = Stream.concat(
-                Optional.ofNullable(connections2.get(address)).orElseGet(Collections::emptyList).stream(),
-                Optional.ofNullable(connections1.get(address)).orElseGet(Collections::emptyList).stream());
-        HttpClientConnection httpClientConnection = stream.filter(HttpClientConnection::isIdle).findFirst().orElseGet(() -> getNewConnection(address));
-        return httpClientConnection;
-    }
-
-    private HttpClientConnection getNewConnection(Address address) {
+    public CompletableFuture<HttpResponse> send(URL url, HttpRequest request) {
+        String protocol = url.getProtocol();
+        String host = url.getHost();
+        int port = url.getPort() == -1 ? url.getDefaultPort() : url.getPort();
+        HttpVersion version = request.getVersion();
+        Address address = new Address(host, port, protocol.equals("https"));
+        HttpClientConnection connection = null;
         try {
-//            String applicationProtocol = "http/1.1";
-//            String applicationProtocol = "h2c";// TODO remove
-//            AsynchronousSocketChannel channel = AsynchronousSocketChannel.open();
-//            channel.connect(new InetSocketAddress(address.host, address.port)).get();
-//            if (address.https) {
-//                channel = new AsynchronousSecureSocketChannel(channel, TLS.get());
-//                ((AsynchronousSecureSocketChannel) channel).handshake().get();
-//                applicationProtocol = ((AsynchronousSecureSocketChannel) channel).getSslEngine().getApplicationProtocol();
-//            }
-//            HttpClientConnection connection = null;
-//            if ("http/1.1".equals(applicationProtocol)) {
-//                connection = new Http1ClientConnection(channel);
-//                List<Http1ClientConnection> connections = this.connections1.get(address);
-//                if (connections == null) this.connections1.put(address, connections = new ArrayList<>());
-//                connections.add((Http1ClientConnection) connection);
-//            } else if ("h2".equals(applicationProtocol) || "h2c".equals(applicationProtocol)) {
-//                connection = new Http2ClientConnection(this, channel);
-//                List<Http2ClientConnection> connections = this.connections2.get(address);
-//                if (connections == null) this.connections2.put(address, connections = new ArrayList<>());
-//                connections.add((Http2ClientConnection) connection);
-//            }
-//            return connection;
-
-            AsynchronousSocketChannel channel = AsynchronousSocketChannel.open();
-            channel.connect(new InetSocketAddress(address.host, address.port)).get();
-
-            Http1ClientConnection connection = new Http1ClientConnection(channel);
-            List<Http1ClientConnection> connections = this.connections1.get(address);
-            if (connections == null) this.connections1.put(address, connections = new ArrayList<>());
-            connections.add((Http1ClientConnection) connection);
-
-//            Http2ClientConnection connection = new Http2ClientConnection(channel);
-//            List<Http2ClientConnection> connections = this.connections2.get(address);
-//            if (connections == null) this.connections2.put(address, connections = new ArrayList<>());
-//            connections.add((Http2ClientConnection) connection);
-
-            return connection;
-
+            connection = getConnection(address, version);
         } catch (Exception e) {
             e.printStackTrace();
         }
-        return null;
+        return connection.send(request);
     }
+
+    synchronized protected HttpClientConnection getConnection(Address address, HttpVersion version) throws IOException, ExecutionException, InterruptedException, NoSuchAlgorithmException, KeyManagementException {
+        if (version == HttpVersion.AUTO) {
+            Stream<HttpClientConnection> connections = Stream.concat(Optional.ofNullable(connections2.get(address)).orElseGet(Collections::emptyList).stream(), Optional.ofNullable(connections1.get(address)).orElseGet(Collections::emptyList).stream());
+            HttpClientConnection connection = connections.filter(HttpClientConnection::isIdle).findFirst().orElse(null);
+            if (connection == null) {
+                AsynchronousSocketChannel channel = AsynchronousSocketChannel.open();
+                channel.connect(new InetSocketAddress(address.host, address.port)).get();
+                if (address.https) {
+                    channel = new AsynchronousSecureSocketChannel(channel, Util.getTLSClientHttp2And1().get());
+                    ((AsynchronousSecureSocketChannel) channel).handshake().get();
+                    String protocol = ((AsynchronousSecureSocketChannel) channel).getSslEngine().getApplicationProtocol();
+                    connection = switch (protocol) {
+                        case "h2" -> new Http2ClientConnection(this, channel);
+                        default -> new Http1ClientConnection(channel);
+                    };
+                    if (connection instanceof Http1ClientConnection c) {
+                        List<Http1ClientConnection> list = connections1.get(address);
+                        if (list == null) {
+                            connections1.put(address, list = new ArrayList<>());
+                        }
+                        list.add(c);
+                    } else if (connection instanceof Http2ClientConnection c) {
+                        List<Http2ClientConnection> list = connections2.get(address);
+                        if (list == null) {
+                            connections2.put(address, list = new ArrayList<>());
+                        }
+                        list.add(c);
+                    }
+                } else {
+                    connection = new Http1ClientConnection(channel);
+                    List<Http1ClientConnection> list = this.connections1.get(address);
+                    if (connections == null) this.connections1.put(address, list = new ArrayList<>());
+                    list.add((Http1ClientConnection) connection);
+                }
+            }
+            return connection;
+        } else if (version == HttpVersion.HTTP_2) {
+            Stream<Http2ClientConnection> connections = Optional.ofNullable(connections2.get(address)).orElseGet(Collections::emptyList).stream();
+            Http2ClientConnection connection = connections.filter(HttpClientConnection::isIdle).findFirst().orElse(null);
+            if (connection == null) {
+                AsynchronousSocketChannel channel = AsynchronousSocketChannel.open();
+                channel.connect(new InetSocketAddress(address.host, address.port)).get();
+                if (address.https) {
+                    channel = new AsynchronousSecureSocketChannel(channel, Util.getTLSClientHttp2().get());
+                    ((AsynchronousSecureSocketChannel) channel).handshake().get();
+                    String protocol = ((AsynchronousSecureSocketChannel) channel).getSslEngine().getApplicationProtocol();
+                    connection = switch (protocol) {
+                        case "h2" -> new Http2ClientConnection(this, channel);
+                        default -> null;
+                    };
+                    List<Http2ClientConnection> list = connections2.get(address);
+                    if (list == null) {
+                        connections2.put(address, list = new ArrayList<>());
+                    }
+                    list.add(connection);
+                }
+            }
+            return connection;
+        } else if (version == HttpVersion.HTTP_1_1) {
+            Stream<Http1ClientConnection> connections = Optional.ofNullable(connections1.get(address)).orElseGet(Collections::emptyList).stream();
+            HttpClientConnection connection = connections.filter(HttpClientConnection::isIdle).findFirst().orElse(null);
+            if (connection == null) {
+                AsynchronousSocketChannel channel = AsynchronousSocketChannel.open();
+                channel.connect(new InetSocketAddress(address.host, address.port)).get();
+                if (address.https) {
+                    channel = new AsynchronousSecureSocketChannel(channel, Util.getTLSClientHttp1().get());
+                    ((AsynchronousSecureSocketChannel) channel).handshake().get();
+                    String protocol = ((AsynchronousSecureSocketChannel) channel).getSslEngine().getApplicationProtocol();
+                    connection = switch (protocol) {
+                        case "http/1.1" -> new Http1ClientConnection(channel);
+                        default -> null;
+                    };
+                }
+            }
+            return connection;
+        } else if (version == HttpVersion.HTTP_1_0) {
+            AsynchronousSocketChannel channel = AsynchronousSocketChannel.open();
+            channel.connect(new InetSocketAddress(address.host, address.port)).get();
+            if (address.https) {
+                channel = new AsynchronousSecureSocketChannel(channel, Util.getTLSClientHttp1().get());
+                ((AsynchronousSecureSocketChannel) channel).handshake().get();
+                String protocol = ((AsynchronousSecureSocketChannel) channel).getSslEngine().getApplicationProtocol();
+                if (protocol == "http/1.1") {
+                    return new Http1ClientConnection(channel);
+                }
+            }
+            return new Http1ClientConnection(channel);
+        } else {
+            return null;
+        }
+    }
+
 
     @Override
     public ExecutorService getExecutorService() {

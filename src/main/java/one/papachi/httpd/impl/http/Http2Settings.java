@@ -16,51 +16,51 @@ public class Http2Settings {
 
     public Http2Settings() {
     }
-    public int getHeaderTableSize() {
+    synchronized public int getHeaderTableSize() {
         return headerTableSize;
     }
 
-    public int getEnablePush() {
+    synchronized public int getEnablePush() {
         return enablePush;
     }
 
-    public int getMaxConcurrentStreams() {
+    synchronized public int getMaxConcurrentStreams() {
         return maxConcurrentStreams;
     }
 
-    public int getInitialWindowSize() {
+    synchronized public int getInitialWindowSize() {
         return initialWindowSize;
     }
 
-    public int getMaxFrameSize() {
+    synchronized public int getMaxFrameSize() {
         return maxFrameSize;
     }
 
-    public int getMaxHeaderListSize() {
+    synchronized public int getMaxHeaderListSize() {
         return maxHeaderListSize;
     }
 
-    public void setHeaderTableSize(int headerTableSize) {
+    synchronized public void setHeaderTableSize(int headerTableSize) {
         this.headerTableSize = headerTableSize;
     }
 
-    public void setEnablePush(int enablePush) {
+    synchronized public void setEnablePush(int enablePush) {
         this.enablePush = enablePush;
     }
 
-    public void setMaxConcurrentStreams(int maxConcurrentStreams) {
+    synchronized public void setMaxConcurrentStreams(int maxConcurrentStreams) {
         this.maxConcurrentStreams = maxConcurrentStreams;
     }
 
-    public void setInitialWindowSize(int initialWindowSize) {
+    synchronized public void setInitialWindowSize(int initialWindowSize) {
         this.initialWindowSize = initialWindowSize;
     }
 
-    public void setMaxFrameSize(int maxFrameSize) {
+    synchronized public void setMaxFrameSize(int maxFrameSize) {
         this.maxFrameSize = maxFrameSize;
     }
 
-    public void setMaxHeaderListSize(int maxHeaderListSize) {
+    synchronized public void setMaxHeaderListSize(int maxHeaderListSize) {
         this.maxHeaderListSize = maxHeaderListSize;
     }
 

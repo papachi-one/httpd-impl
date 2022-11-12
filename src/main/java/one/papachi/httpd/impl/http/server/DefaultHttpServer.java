@@ -7,6 +7,7 @@ import one.papachi.httpd.api.http.HttpsTLSSupplier;
 import one.papachi.httpd.api.websocket.WebSocketHandler;
 import one.papachi.httpd.impl.Run;
 import one.papachi.httpd.impl.StandardHttpOptions;
+import one.papachi.httpd.impl.net.AsynchronousSecureSocketChannel;
 
 import java.io.IOException;
 import java.nio.channels.AsynchronousServerSocketChannel;
@@ -202,27 +203,23 @@ public class DefaultHttpServer implements HttpServer, Runnable {
     }
 
     private void accepted(AsynchronousSocketChannel channel) {
-//        String applicationProtocol = "http/1.1";
-//        String applicationProtocol = "h2c";// TODO remove
-//        if (TLS != null) {
-//            channel = new AsynchronousSecureSocketChannel(channel, TLS.get());
-//            try {
-//                ((AsynchronousSecureSocketChannel) channel).handshake().get();
-//            } catch (Exception e) {
-//                close(channel);
-//                return;
-//            }
-//            applicationProtocol = ((AsynchronousSecureSocketChannel) channel).getSslEngine().getApplicationProtocol();
-//        }
-//        AsynchronousSocketChannel theChannel = channel;
-//        switch (applicationProtocol) {
-//            case "http/1.1" -> executorService.execute(new Http1ServerConnection(DefaultHttpServer.this, theChannel));
-//            case "h2", "h2c" -> executorService.execute(() -> new Http2ServerConnection(DefaultHttpServer.this, theChannel));
-//            default -> close(channel);
-//        }
-
-        new Http1ServerConnection(channel, httpHandler);
-//        new Http2ServerConnection(channel, httpHandler);
+        String applicationProtocol = "http/1.1";
+        if (TLS != null) {
+            channel = new AsynchronousSecureSocketChannel(channel, TLS.get());
+            try {
+                ((AsynchronousSecureSocketChannel) channel).handshake().get();
+            } catch (Exception e) {
+                close(channel);
+                return;
+            }
+            applicationProtocol = ((AsynchronousSecureSocketChannel) channel).getSslEngine().getApplicationProtocol();
+        }
+        AsynchronousSocketChannel theChannel = channel;
+        switch (applicationProtocol) {
+            case "http/1.1" -> executorService.execute(new Http1ServerConnection(theChannel, getHttpHandler()));
+            case "h2" -> executorService.execute(() -> new Http2ServerConnection(this, theChannel, getHttpHandler()));
+            default -> close(channel);
+        }
     }
 
     private void close(AsynchronousSocketChannel channel) {

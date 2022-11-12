@@ -2,6 +2,7 @@ package one.papachi.httpd.impl.http.client;
 
 import one.papachi.httpd.api.http.HttpHeader;
 import one.papachi.httpd.api.http.HttpHeaders;
+import one.papachi.httpd.api.http.HttpOptions;
 import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpResponse;
 import one.papachi.httpd.api.http.HttpVersion;
@@ -22,8 +23,8 @@ public class Http2ClientConnection extends Http2Connection implements HttpClient
 
     protected final Map<Integer, CompletableFuture<HttpResponse>> completableFutures = Collections.synchronizedMap(new HashMap<>());
 
-    public Http2ClientConnection(AsynchronousSocketChannel channel) {
-        super(channel, Http2ConnectionIO.Mode.CLIENT);
+    public Http2ClientConnection(HttpOptions options, AsynchronousSocketChannel channel) {
+        super(options, channel, Http2ConnectionIO.Mode.CLIENT);
         sendMagic();
         sendInitialSettings();
     }

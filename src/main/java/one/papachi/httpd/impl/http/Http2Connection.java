@@ -3,6 +3,8 @@ package one.papachi.httpd.impl.http;
 import one.papachi.httpd.api.http.HttpBody;
 import one.papachi.httpd.api.http.HttpHeader;
 import one.papachi.httpd.api.http.HttpHeaders;
+import one.papachi.httpd.api.http.HttpOptions;
+import one.papachi.httpd.impl.Run;
 import one.papachi.httpd.impl.StandardHttpOptions;
 import one.papachi.httpd.impl.hpack.Decoder;
 import one.papachi.httpd.impl.hpack.Encoder;
@@ -27,6 +29,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public abstract class Http2Connection {
 
+    protected final HttpOptions options;
     protected final AsynchronousSocketChannel channel;
     protected final Http2Settings localSettings = new Http2Settings();
     protected final Http2Settings remoteSettings = new Http2Settings();
@@ -49,9 +52,11 @@ public abstract class Http2Connection {
     protected final AtomicInteger nextStreamId = new AtomicInteger(1);
     protected volatile boolean isEndStream;
 
-    public Http2Connection(AsynchronousSocketChannel channel, Http2ConnectionIO.Mode mode) {
+    public Http2Connection(HttpOptions options, AsynchronousSocketChannel channel, Http2ConnectionIO.Mode mode) {
+        this.options = options;
         this.channel = channel;
         io = new Http2ConnectionIO(mode, channel, localSettings, this::handleFrame);
+        Run.async(() -> io.run(mode == Http2ConnectionIO.Mode.SERVER ? Http2ConnectionIO.State.READ_MAGIC : Http2ConnectionIO.State.READ_FRAME_HEADER));
     }
 
     protected final Set<LocalBody> localBodiesReady = new LinkedHashSet<>();
@@ -98,7 +103,7 @@ public abstract class Http2Connection {
     }
 
     protected void sendLocalBody(int streamId, HttpBody body) {
-        Http2LocalBodyChannel localBodyChannel = new Http2LocalBodyChannel(body, StandardHttpOptions.WRITE_BUFFER_SIZE.defaultValue(), data -> {
+        Http2LocalBodyChannel localBodyChannel = new Http2LocalBodyChannel(body, options.getOption(StandardHttpOptions.WRITE_BUFFER_SIZE), data -> {
             synchronized (localBodiesReady) {
                 localBodiesReady.add(new LocalBody(streamId, data));
                 writeLocalBody();
@@ -118,7 +123,7 @@ public abstract class Http2Connection {
                 }
                 int size;
                 synchronized (sendWindowSizeLock) {
-                    size = Math.min(Math.min(localSettings.getMaxFrameSize(), remoteSettings.getMaxFrameSize()), Math.min(sendWindowSize, sendWindowSizes.get(localBody.streamId)));
+                    size = Math.min(Math.min(localSettings.getMaxFrameSize(), remoteSettings.getMaxFrameSize()), Math.min(sendWindowSize, Optional.ofNullable(sendWindowSizes.get(localBody.streamId)).orElse(0)));
                 }
                 if (size == 0) {
                     continue;
@@ -132,19 +137,19 @@ public abstract class Http2Connection {
                     }
                     ByteBuffer frameHeader = ByteBuffer.allocate(10);
                     frameHeader.putInt(0).put((byte) 0x00).put((byte) 0x01).putInt(localBody.streamId).flip().get();
-                    io.write(frameHeader);
+                    Run.async(() -> io.write(frameHeader));
                 } else if (result > 0) {
                     localBodyWriting.add(localBody.localBodyChannel);
                     updateSendWindowSize(-result);
                     updateSendWindowSize(localBody.streamId, -result);
                     ByteBuffer frameHeader = ByteBuffer.allocate(10);
                     frameHeader.putInt(result).put((byte) 0x00).put((byte) 0x00).putInt(localBody.streamId).flip().get();
-                    io.write(() -> {
+                    Run.async(() -> io.write(() -> {
                         synchronized (localBodiesReady) {
                             localBodyWriting.remove(localBody.localBodyChannel);
                         }
                         localBody.localBodyChannel.release(result);
-                    }, frameHeader, readResult.buffer());
+                    }, frameHeader, readResult.buffer()));
                 }
             }
         }
@@ -209,13 +214,21 @@ public abstract class Http2Connection {
     }
 
     protected void sendInitialSettings() {
-        int maxFrameSize = StandardHttpOptions.MAX_FRAME_SIZE.defaultValue();
-        int maxConcurrentStreams = StandardHttpOptions.MAX_CONCURRENT_STREAMS.defaultValue();
-        int headerTableSize = StandardHttpOptions.HEADER_TABLE_SIZE.defaultValue();
-        int headerListSize = StandardHttpOptions.HEADER_LIST_SIZE.defaultValue();
-        int connectionWindowSize = StandardHttpOptions.CONNECTION_WINDOW_SIZE.defaultValue();
+        int maxFrameSize = options.getOption(StandardHttpOptions.MAX_FRAME_SIZE);
+        int maxConcurrentStreams = options.getOption(StandardHttpOptions.MAX_CONCURRENT_STREAMS);
+        int headerTableSize = options.getOption(StandardHttpOptions.HEADER_TABLE_SIZE);
+        int headerListSize = options.getOption(StandardHttpOptions.HEADER_LIST_SIZE);
+        int connectionWindowSize = options.getOption(StandardHttpOptions.CONNECTION_WINDOW_SIZE);
         int connectionWindowUpdate = connectionWindowSize - 65535;
-        int streamInitialWindowSize = StandardHttpOptions.STREAM_INITIAL_WINDOW_SIZE.defaultValue();
+        int streamInitialWindowSize = options.getOption(StandardHttpOptions.STREAM_INITIAL_WINDOW_SIZE);
+
+//        int maxFrameSize = StandardHttpOptions.MAX_FRAME_SIZE.defaultValue();
+//        int maxConcurrentStreams = StandardHttpOptions.MAX_CONCURRENT_STREAMS.defaultValue();
+//        int headerTableSize = StandardHttpOptions.HEADER_TABLE_SIZE.defaultValue();
+//        int headerListSize = StandardHttpOptions.HEADER_LIST_SIZE.defaultValue();
+//        int connectionWindowSize = StandardHttpOptions.CONNECTION_WINDOW_SIZE.defaultValue();
+//        int connectionWindowUpdate = connectionWindowSize - 65535;
+//        int streamInitialWindowSize = StandardHttpOptions.STREAM_INITIAL_WINDOW_SIZE.defaultValue();
 
         localSettings.setMaxFrameSize(maxFrameSize);
         localSettings.setMaxConcurrentStreams(maxConcurrentStreams);
@@ -239,7 +252,7 @@ public abstract class Http2Connection {
 
         if (connectionWindowUpdate > 0) {
             ByteBuffer buffer = ByteBuffer.allocate(9 + 4 + 1);
-            buffer.putInt(8).put((byte) 0x08).put((byte) 0x00).putInt(0);
+            buffer.putInt(4).put((byte) 0x08).put((byte) 0x00).putInt(0);
             buffer.putInt(connectionWindowUpdate);
             buffer.flip().get();
             io.write(buffer);
@@ -435,11 +448,11 @@ public abstract class Http2Connection {
                     synchronized (receiveWindowSizeLock) {
                         this.consumedWindowSize += consumed;
                         this.consumedWindowSizes.put(streamId, Optional.ofNullable(this.consumedWindowSizes.get(streamId)).orElse(0) + consumed);
-                        if (this.consumedWindowSize > StandardHttpOptions.CONNECTION_WINDOW_SIZE_THRESHOLD.defaultValue()) {
+                        if (this.consumedWindowSize > options.getOption(StandardHttpOptions.CONNECTION_WINDOW_SIZE_THRESHOLD)) {
                             updateReceiveWindowSize(this.consumedWindowSize);
                             this.consumedWindowSize = 0;
                         }
-                        if (this.consumedWindowSizes.get(streamId) > StandardHttpOptions.STREAM_WINDOW_SIZE_THRESHOLD.defaultValue()) {
+                        if (this.consumedWindowSizes.get(streamId) > options.getOption(StandardHttpOptions.STREAM_WINDOW_SIZE_THRESHOLD)) {
                             updateReceiveWindowSize(streamId, this.consumedWindowSizes.get(streamId));
                             this.consumedWindowSizes.put(streamId, 0);
                         }

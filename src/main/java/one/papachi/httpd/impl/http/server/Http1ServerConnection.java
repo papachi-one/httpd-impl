@@ -13,6 +13,7 @@ import one.papachi.httpd.impl.http.DefaultHttpRequest;
 import one.papachi.httpd.impl.http.Http1Connection;
 import one.papachi.httpd.impl.http.Http1RemoteBodyChannel;
 
+import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.util.ArrayList;
 import java.util.List;
@@ -58,8 +59,14 @@ public class Http1ServerConnection extends Http1Connection {
             isChunked = true;
         } else if (contentLength != null && contentLength < 0) {
             isError = true;
-//            int setStatusCode = 400;
-//            String reasonPhrase = "Bad Request";
+            ByteBuffer buffer;
+            if (request.getVersion() == HttpVersion.HTTP_1_1) {
+                buffer = ByteBuffer.wrap("HTTP/1.1 400 Bad Request\r\n\r\n".getBytes());
+            } else {
+                buffer = ByteBuffer.wrap("HTTP/1.0 400 Bad Request\r\n\r\n".getBytes());
+            }
+            write(buffer, ignored -> close());
+            return;
         } else if (contentLength != null && contentLength >= 0) {
             length = contentLength;
         } else {

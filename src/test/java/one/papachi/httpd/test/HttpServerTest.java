@@ -5,25 +5,46 @@ import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpResponse;
 import one.papachi.httpd.api.http.HttpServer;
 import one.papachi.httpd.api.http.HttpsTLSSupplier;
+import one.papachi.httpd.impl.Run;
+import one.papachi.httpd.impl.StandardHttpOptions;
+import one.papachi.httpd.impl.Util;
 import one.papachi.httpd.impl.http.DefaultHttpBody;
 import one.papachi.httpd.impl.http.DefaultHttpResponse;
+import one.papachi.httpd.impl.http.client.DefaultHttpClient;
 
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
 
 public class HttpServerTest {
 
     public static void main(String[] args) throws Exception {
-        HttpsTLSSupplier tls = Util.getTLSServer();
+        byte[] body = Files.readAllBytes(Path.of("c:\\Users\\PC\\Downloads\\VMware-workstation-full-16.2.4-20089737.exe"));
         HttpServer server = HttpServer.getInstance();
-        server.getServerSocketChannel().bind(new InetSocketAddress(80));
-//        server.setOption(StandardHttpOptions.TLS, tls);
-        server.setHttpHandler(HttpServerTest::handle);
+        server.getServerSocketChannel().bind(new InetSocketAddress(443));
+        server.setOption(StandardHttpOptions.TLS, Util.getTLSServer());
+//        server.setOption(StandardHttpOptions.WRITE_BUFFER_SIZE, 4 * StandardHttpOptions.WRITE_BUFFER_SIZE.defaultValue());
+//        server.setOption(StandardHttpOptions.MAX_FRAME_SIZE, 4 * StandardHttpOptions.MAX_FRAME_SIZE.defaultValue());
+//        server.setOption(StandardHttpOptions.CONNECTION_WINDOW_SIZE, 4 * StandardHttpOptions.CONNECTION_WINDOW_SIZE.defaultValue());
+//        server.setOption(StandardHttpOptions.STREAM_INITIAL_WINDOW_SIZE, 4 * StandardHttpOptions.STREAM_INITIAL_WINDOW_SIZE.defaultValue());
+//        server.setOption(StandardHttpOptions.CONNECTION_WINDOW_SIZE_THRESHOLD, 4 * StandardHttpOptions.CONNECTION_WINDOW_SIZE_THRESHOLD.defaultValue());
+//        server.setOption(StandardHttpOptions.STREAM_WINDOW_SIZE_THRESHOLD, 4 * StandardHttpOptions.STREAM_WINDOW_SIZE_THRESHOLD.defaultValue());
+        server.setHttpHandler(request -> {
+            CompletableFuture<HttpResponse> future = new CompletableFuture<>();
+            Run.async(() -> {
+                DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
+                builder.addHeader("Server", "papachi-httpd/1.0");
+                builder.addHeader("Content-Type", "application/octet-stream");
+                builder.setBody(body);
+                HttpResponse response = builder.build();
+                future.complete(response);
+            });
+            return future;
+        });
         server.start();
         while (true) {
             Thread.sleep(1000);
@@ -61,11 +82,12 @@ public class HttpServerTest {
         }
         DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
         builder.addHeader("Server", "papachi-httpd/1.0");
-        builder.addHeader("Content-Type", "application/octet-stream");
-        builder.addHeader("Content-Length", "3418040661");
+        builder.addHeader("Content-type", "text/plain");
+//        builder.addHeader("Content-Type", "application/octet-stream");
+//        builder.addHeader("Content-Length", "3418040661");
 //        builder.setBody(new DefaultHttpBody.DefaultBuilder().setInput(Path.of("c:\\Users\\PC\\Downloads\\15W vs 25W.png")).build());
-        builder.setBody(new DefaultHttpBody.DefaultBuilder().setInput(Path.of("c:\\Users\\PC\\Downloads\\fcp2121021.mp4")).build());
-//        builder.setBody(sb.toString());
+//        builder.setBody(new DefaultHttpBody.DefaultBuilder().setInput(Path.of("c:\\Users\\PC\\Downloads\\fcp2121021.mp4")).build());
+        builder.setBody(sb.toString());
         return builder.build();
     }
 

@@ -43,32 +43,34 @@ public class Http2LocalBodyChannel {
     private void readFromChannel() {
         if (!amIReading.compareAndSet(false, true))
             return;
-        channel.read(writeBuffer, null, new CompletionHandler<Integer, Void>() {
-            @Override
-            public void completed(Integer result, Void attachment) {
-                if (result == -1) {
-                    isClosed = true;
-                    Run.async(() -> listener.accept(Http2LocalBodyChannel.this));
-                    return;
+        synchronized (lock) {
+            channel.read(writeBuffer, null, new CompletionHandler<Integer, Void>() {
+                @Override
+                public void completed(Integer result, Void attachment) {
+                    synchronized (lock) {
+                        if (result == -1) {
+                            isClosed = true;
+                            Run.async(() -> listener.accept(Http2LocalBodyChannel.this));
+                            return;
+                        }
+                        counter.addAndGet(result);
+                        readBuffer.limit(writeBuffer.position());
+                        Run.async(() -> listener.accept(Http2LocalBodyChannel.this));
+                        if (writeBuffer.hasRemaining()) {
+                            channel.read(writeBuffer, attachment, this);
+                        } else {
+                            amIReading.set(false);
+                        }
+                    }
                 }
-                counter.addAndGet(result);
-                synchronized (lock) {
-                    readBuffer.limit(writeBuffer.position());
-                    Run.async(() -> listener.accept(Http2LocalBodyChannel.this));
-                }
-                if (writeBuffer.hasRemaining()) {
-                    channel.read(writeBuffer, attachment, this);
-                } else {
-                    amIReading.set(false);
-                }
-            }
 
-            @Override
-            public void failed(Throwable exc, Void attachment) {
-                exc.printStackTrace();
-                isClosed = true;
-            }
-        });
+                @Override
+                public void failed(Throwable exc, Void attachment) {
+                    exc.printStackTrace();
+                    isClosed = true;
+                }
+            });
+        }
     }
 
     public record ReadResult(int result, ByteBuffer buffer) {}
@@ -94,8 +96,7 @@ public class Http2LocalBodyChannel {
                 writeBuffer.position(readBuffer.limit());
                 amIReading.set(false);
                 Run.async(this::readFromChannel);
-            }
-            if (readBuffer.hasRemaining() || isClosed) {
+            } else if (readBuffer.hasRemaining() || isClosed) {
                 Run.async(() -> listener.accept(Http2LocalBodyChannel.this));
             }
         }

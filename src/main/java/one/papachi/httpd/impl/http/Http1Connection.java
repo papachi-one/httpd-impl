@@ -5,6 +5,7 @@ import one.papachi.httpd.api.http.HttpBody;
 import one.papachi.httpd.api.http.HttpHeader;
 import one.papachi.httpd.api.http.HttpHeaders;
 import one.papachi.httpd.impl.CustomDataBuffer;
+import one.papachi.httpd.impl.Run;
 import one.papachi.httpd.impl.StandardHttpOptions;
 
 import java.io.IOException;
@@ -21,10 +22,6 @@ import java.util.function.Consumer;
 
 public abstract class Http1Connection implements Runnable {
 
-    protected enum Mode {
-        CLIENT, SERVER
-    }
-
     protected enum State {
         READ, READ_CHUNK_SIZE, READ_REMOTE, READ_REMOTE_LINE, READ_REMOTE_HEADER_LINE, READ_REMOTE_BODY, PROCESS, BREAK, ERROR,
     }
@@ -35,9 +32,9 @@ public abstract class Http1Connection implements Runnable {
 
     protected static final byte[] CRLF_ZERO_CRLF_CRLF = new byte[]{'\r', '\n', '0', '\r', '\n', '\r', '\n'};
 
+    protected final Object lock = new Object();
     protected final AsynchronousSocketChannel channel;
     protected final ByteBuffer readBuffer;
-    protected final Mode mode = Mode.SERVER;
     protected volatile ByteBuffer writeBuffer;
     protected volatile State state = State.READ_REMOTE, resumeState;
     protected volatile CustomDataBuffer osBuffer;
@@ -55,64 +52,71 @@ public abstract class Http1Connection implements Runnable {
     protected volatile boolean readRemoteBodyUntilEos;
     protected volatile boolean isError;
 
-
-
     public Http1Connection(AsynchronousSocketChannel channel) {
         this.channel = channel;
         this.readBuffer = ByteBuffer.allocate(StandardHttpOptions.READ_BUFFER_SIZE.defaultValue()).flip();
     }
 
     protected void run(State state) {
-        this.state = state;
+        synchronized (lock) {
+            this.state = state;
+        }
         run();
     }
 
     @Override
     public void run() {
-        while (true) {
-            if (state == State.READ) {
-                if (readBuffer.hasRemaining()) {
-                    state = isChunked ? State.READ_CHUNK_SIZE : resumeState;
-                } else {
+        synchronized (lock) {
+            while (true) {
+                if (state == State.READ) {
+                    if (readBuffer.hasRemaining()) {
+                        state = isChunked ? State.READ_CHUNK_SIZE : resumeState;
+                    } else {
+                        state = State.BREAK;
+                        Run.async(() -> read());
+                        break;
+                    }
+                } else if (state == State.READ_CHUNK_SIZE) {
+                    state = readChunkSize();
+                } else if (state == State.READ_REMOTE) {
+                    state = readRemote();
+                } else if (state == State.READ_REMOTE_LINE) {
+                    state = readRemoteLine();
+                } else if (state == State.READ_REMOTE_HEADER_LINE) {
+                    state = readRemoteHeaderLine();
+                } else if (state == State.PROCESS) {
                     state = State.BREAK;
-                    read();
-                    break;
+                    processRemote();
+                } else if (state == State.READ_REMOTE_BODY) {
+                    state = readRemoteBody();
+                } else if (state == State.ERROR) {
+                    state = close();
                 }
-            } else if (state == State.READ_CHUNK_SIZE) {
-                state = readChunkSize();
-            } else if (state == State.READ_REMOTE) {
-                state = readRemote();
-            } else if (state == State.READ_REMOTE_LINE) {
-                state = readRemoteLine();
-            } else if (state == State.READ_REMOTE_HEADER_LINE) {
-                state = readRemoteHeaderLine();
-            } else if (state == State.PROCESS) {
-                state = processRemote();
-            } else if (state == State.READ_REMOTE_BODY) {
-                state = readRemoteBody();
-            } else if (state == State.ERROR) {
-                state = close();
+                if (state == State.BREAK)
+                    break;
             }
-            if (state == State.BREAK)
-                break;
         }
     }
 
     protected final CompletionHandler<Integer, Void> read = new CompletionHandler<>() {
         @Override
         public void completed(Integer result, Void attachment) {
-            readBuffer.flip();
-            if (result == -1) {
-                isEos = true;
-                run(resumeState);
-                return;
+            synchronized (lock) {
+                readBuffer.flip();
+                if (result == -1) {
+                    isEos = true;
+                    run(resumeState);
+                    return;
+                }
+                run(isChunked ? State.READ_CHUNK_SIZE : resumeState);
             }
-            run(isChunked ? State.READ_CHUNK_SIZE : resumeState);
         }
 
         @Override
         public void failed(Throwable exc, Void attachment) {
-            run(State.ERROR);
+            synchronized (lock) {
+                run(State.ERROR);
+            }
         }
     };
 
@@ -213,10 +217,9 @@ public abstract class Http1Connection implements Runnable {
         return State.READ;
     }
 
-    protected State processRemote() {
+    protected void processRemote() {
         remoteHeaders = remoteHeadersBuilder.build();
-        handleRemote();
-        return State.BREAK;
+        Run.async(() -> handleRemote());
     }
 
     abstract protected void handleRemote();
@@ -340,7 +343,7 @@ public abstract class Http1Connection implements Runnable {
         }
     };
 
-    private void write(ByteBuffer src, Consumer<Integer> callback) {
+    protected void write(ByteBuffer src, Consumer<Integer> callback) {
         channel.write(src, null, new CompletionHandler<Integer, Void>() {
             private int counter;
             @Override
