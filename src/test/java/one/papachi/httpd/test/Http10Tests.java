@@ -1,5 +1,6 @@
 package one.papachi.httpd.test;
 
+import one.papachi.httpd.api.http.HttpClient;
 import one.papachi.httpd.api.http.HttpMethod;
 import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpResponse;
@@ -7,9 +8,6 @@ import one.papachi.httpd.api.http.HttpServer;
 import one.papachi.httpd.api.http.HttpVersion;
 import one.papachi.httpd.impl.StandardHttpOptions;
 import one.papachi.httpd.impl.Util;
-import one.papachi.httpd.impl.http.DefaultHttpRequest;
-import one.papachi.httpd.impl.http.DefaultHttpResponse;
-import one.papachi.httpd.impl.http.client.DefaultHttpClient;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
@@ -59,7 +57,7 @@ public class Http10Tests {
         HttpServer server = getServer();
         server.setHttpHandler(request -> {
             logRequest(request);
-            DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
+            HttpResponse.Builder builder = HttpResponse.getBuilder();
             builder.header("Server", "papachi-httpd/1.0");
             builder.header("Content-Type", "text/plain");
             builder.body(body);
@@ -69,8 +67,8 @@ public class Http10Tests {
             return future;
         });
         server.start();
-        DefaultHttpClient client = new DefaultHttpClient();
-        DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
+        HttpClient client = HttpClient.getInstance();
+        HttpRequest.Builder builder = HttpRequest.getBuilder();
         builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_1_0);
         HttpRequest request = builder.build();
         HttpResponse response = client.send(getURL(getPort(server)), request).get();
@@ -87,7 +85,7 @@ public class Http10Tests {
         HttpServer server = getServer();
         server.setHttpHandler(request -> {
             logRequest(request);
-            DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
+            HttpResponse.Builder builder = HttpResponse.getBuilder();
             builder.header("Server", "papachi-httpd/1.0");
             builder.header("Content-Type", "text/plain");
             builder.header("Content-Length", Integer.toString(body.getBytes().length));
@@ -98,8 +96,8 @@ public class Http10Tests {
             return future;
         });
         server.start();
-        DefaultHttpClient client = new DefaultHttpClient();
-        DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
+        HttpClient client = HttpClient.getInstance();
+        HttpRequest.Builder builder = HttpRequest.getBuilder();
         builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_1_0);
         HttpRequest request = builder.build();
         HttpResponse response = client.send(getURL(getPort(server)), request).get();
@@ -117,7 +115,7 @@ public class Http10Tests {
         server.setHttpHandler(request -> {
             logRequest(request);
             String requestBody = Util.readString(request.getHttpBody());
-            DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
+            HttpResponse.Builder builder = HttpResponse.getBuilder();
             builder.header("Server", "papachi-httpd/1.0");
             builder.header("Content-Type", "text/plain");
             builder.body(requestBody);
@@ -127,8 +125,8 @@ public class Http10Tests {
             return future;
         });
         server.start();
-        DefaultHttpClient client = new DefaultHttpClient();
-        DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
+        HttpClient client = HttpClient.getInstance();
+        HttpRequest.Builder builder = HttpRequest.getBuilder();
         builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_1_0);
         builder.body(body);
         HttpRequest request = builder.build();
@@ -147,7 +145,7 @@ public class Http10Tests {
         server.setHttpHandler(request -> {
             logRequest(request);
             String requestBody = Util.readString(request.getHttpBody());
-            DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
+            HttpResponse.Builder builder = HttpResponse.getBuilder();
             builder.header("Server", "papachi-httpd/1.0");
             builder.header("Content-Type", "text/plain");
             builder.body(requestBody);
@@ -157,8 +155,8 @@ public class Http10Tests {
             return future;
         });
         server.start();
-        DefaultHttpClient client = new DefaultHttpClient();
-        DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
+        HttpClient client = HttpClient.getInstance();
+        HttpRequest.Builder builder = HttpRequest.getBuilder();
         builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_1_0);
         builder.body(body);
         builder.header("Content-Length", Integer.toString(body.getBytes().length));
@@ -178,7 +176,7 @@ public class Http10Tests {
         server.setHttpHandler(request -> {
             logRequest(request);
             String requestBody = Util.readString(request.getHttpBody());
-            DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
+            HttpResponse.Builder builder = HttpResponse.getBuilder();
             builder.header("Server", "papachi-httpd/1.0");
             builder.header("Content-Type", "text/plain");
             builder.header("Content-Length", Integer.toString(requestBody.getBytes().length));
@@ -189,8 +187,8 @@ public class Http10Tests {
             return future;
         });
         server.start();
-        DefaultHttpClient client = new DefaultHttpClient();
-        DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
+        HttpClient client = HttpClient.getInstance();
+        HttpRequest.Builder builder = HttpRequest.getBuilder();
         builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_1_0);
         builder.body(body);
         HttpRequest request = builder.build();
@@ -209,7 +207,7 @@ public class Http10Tests {
         server.setHttpHandler(request -> {
             logRequest(request);
             String requestBody = Util.readString(request.getHttpBody());
-            DefaultHttpResponse.DefaultBuilder builder = new DefaultHttpResponse.DefaultBuilder();
+            HttpResponse.Builder builder = HttpResponse.getBuilder();
             builder.header("Server", "papachi-httpd/1.0");
             builder.header("Content-Type", "text/plain");
             builder.header("Content-Length", Integer.toString(requestBody.getBytes().length));
@@ -220,8 +218,8 @@ public class Http10Tests {
             return future;
         });
         server.start();
-        DefaultHttpClient client = new DefaultHttpClient();
-        DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
+        HttpClient client = HttpClient.getInstance();
+        HttpRequest.Builder builder = HttpRequest.getBuilder();
         builder.method(HttpMethod.GET).path("/").version(HttpVersion.HTTP_1_0);
         builder.header("Content-Length", Integer.toString(body.getBytes().length));
         builder.body(body);

@@ -60,11 +60,6 @@ public class DefaultHttpServer implements HttpServer, Runnable {
     }
 
     @Override
-    public ExecutorService getExecutorService() {
-        return executorService;
-    }
-
-    @Override
     public void start() {
         Run.async(this);
     }

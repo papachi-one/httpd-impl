@@ -30,6 +30,11 @@ public class Http2ClientConnection extends Http2Connection implements HttpClient
     }
 
     @Override
+    public void close() {
+        closeConnection();
+    }
+
+    @Override
     public CompletableFuture<HttpResponse> send(HttpRequest request) {
         int streamId = nextStreamId.getAndAdd(2);
         CompletableFuture<HttpResponse> completableFuture = new CompletableFuture<>();

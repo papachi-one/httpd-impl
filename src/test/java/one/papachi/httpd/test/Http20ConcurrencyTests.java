@@ -35,7 +35,7 @@ import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
-//@Disabled
+@Disabled
 public class Http20ConcurrencyTests {
 
     private static final String protocol = "https";

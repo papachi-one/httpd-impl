@@ -90,7 +90,7 @@ public abstract class Http1Connection implements Runnable {
                 } else if (state == State.READ_REMOTE_BODY) {
                     state = readRemoteBody();
                 } else if (state == State.ERROR) {
-                    state = close();
+                    state = closeConnection();
                 }
                 if (state == State.BREAK)
                     break;
@@ -244,7 +244,7 @@ public abstract class Http1Connection implements Runnable {
         return State.READ;
     }
 
-    protected State close() {
+    protected State closeConnection() {
         try {
             channel.close();
         } catch (IOException ignored) {

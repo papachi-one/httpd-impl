@@ -471,4 +471,11 @@ public abstract class Http2Connection {
 
     protected abstract void handleRemote(int streamId);
 
+    protected void closeConnection() {
+        try {
+            channel.close();
+        } catch (IOException ignored) {
+        }
+    }
+
 }

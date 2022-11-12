@@ -65,7 +65,7 @@ public class Http1ServerConnection extends Http1Connection {
             } else {
                 buffer = ByteBuffer.wrap("HTTP/1.0 400 Bad Request\r\n\r\n".getBytes());
             }
-            write(buffer, ignored -> close());
+            write(buffer, ignored -> closeConnection());
             return;
         } else if (contentLength != null && contentLength >= 0) {
             length = contentLength;

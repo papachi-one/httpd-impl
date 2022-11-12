@@ -33,6 +33,11 @@ public class Http1ClientConnection extends Http1Connection implements HttpClient
     }
 
     @Override
+    public void close() {
+        closeConnection();
+    }
+
+    @Override
     public CompletableFuture<HttpResponse> send(HttpRequest request) {
         isIdle = false;
         this.request = request;

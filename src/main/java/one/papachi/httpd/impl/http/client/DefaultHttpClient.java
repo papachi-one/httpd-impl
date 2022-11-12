@@ -17,6 +17,7 @@ import java.nio.channels.AsynchronousSocketChannel;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -25,7 +26,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
 import java.util.stream.Stream;
 
 public class DefaultHttpClient implements HttpClient {
@@ -63,6 +63,11 @@ public class DefaultHttpClient implements HttpClient {
     private Integer STREAM_WINDOW_SIZE_THRESHOLD = StandardHttpOptions.STREAM_WINDOW_SIZE_THRESHOLD.defaultValue();
 
     private record Address(String host, int port, boolean https) {
+    }
+
+    @Override
+    public void close() {
+        Stream.concat(connections1.values().stream().flatMap(Collection::stream), connections2.values().stream().flatMap(Collection::stream)).forEach(HttpClientConnection::close);
     }
 
     @Override
@@ -171,12 +176,6 @@ public class DefaultHttpClient implements HttpClient {
         } else {
             return null;
         }
-    }
-
-
-    @Override
-    public ExecutorService getExecutorService() {
-        return null;
     }
 
     public Set<HttpOption<?>> supportedOptions() {

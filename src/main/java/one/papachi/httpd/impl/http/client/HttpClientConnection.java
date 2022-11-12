@@ -11,4 +11,6 @@ public interface HttpClientConnection {
 
     boolean isIdle();
 
+    void close();
+
 }
