@@ -25,10 +25,6 @@ import java.util.concurrent.CompletableFuture;
 
 public class DefaultWebSocketConnection implements WebSocketConnection, Runnable {
 
-    public enum Mode {
-        CLIENT, SERVER
-    }
-
     @Override
     public HttpConnection getHttpConnection() {
         return null;

@@ -87,7 +87,7 @@ public class DefaultHttpClient implements HttpClient {
     }
 
     synchronized protected HttpClientConnection getConnection(Address address, HttpVersion version) throws IOException, ExecutionException, InterruptedException, NoSuchAlgorithmException, KeyManagementException {
-        if (version == HttpVersion.AUTO) {
+        if (version == HttpVersion.ANY) {
             Stream<HttpClientConnection> connections = Stream.concat(Optional.ofNullable(connections2.get(address)).orElseGet(Collections::emptyList).stream(), Optional.ofNullable(connections1.get(address)).orElseGet(Collections::emptyList).stream());
             HttpClientConnection connection = connections.filter(HttpClientConnection::isIdle).findFirst().orElse(null);
             if (connection == null) {
