@@ -12,7 +12,6 @@ import one.papachi.httpd.impl.net.AsynchronousSecureSocketChannel;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.net.URL;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
@@ -71,12 +70,13 @@ public class DefaultHttpClient implements HttpClient {
     }
 
     @Override
-    public CompletableFuture<HttpResponse> send(URL url, HttpRequest request) {
-        String protocol = url.getProtocol();
-        String host = url.getHost();
-        int port = url.getPort() == -1 ? url.getDefaultPort() : url.getPort();
+    public CompletableFuture<HttpResponse> send(HttpRequest request) {
+        InetSocketAddress server = request.getServer();
+        String host = server.getHostString();
+        int port = server.getPort();
+        String scheme = request.getScheme();
         HttpVersion version = request.getVersion();
-        Address address = new Address(host, port, protocol.equals("https"));
+        Address address = new Address(host, port, "https".equalsIgnoreCase(scheme));
         HttpClientConnection connection = null;
         try {
             connection = getConnection(address, version);

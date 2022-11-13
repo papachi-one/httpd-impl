@@ -6,12 +6,14 @@ import one.papachi.httpd.api.http.HttpHeader;
 import one.papachi.httpd.api.http.HttpMethod;
 import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpResponse;
+import one.papachi.httpd.api.http.HttpStatus;
 import one.papachi.httpd.api.http.HttpVersion;
 import one.papachi.httpd.api.websocket.WebSocketHandler;
 import one.papachi.httpd.impl.http.Http1Connection;
 import one.papachi.httpd.impl.http.data.DefaultHttpBody;
 import one.papachi.httpd.impl.http.data.DefaultHttpHeader;
 import one.papachi.httpd.impl.http.data.DefaultHttpRequest;
+import one.papachi.httpd.impl.http.data.DefaultHttpResponse;
 import one.papachi.httpd.impl.net.TransferAsynchronousByteChannel;
 import one.papachi.httpd.impl.websocket.DefaultWebSocketConnection;
 
@@ -94,17 +96,31 @@ public class Http1ServerConnection extends Http1Connection {
                 && "upgrade".equalsIgnoreCase(request.getHeaderValue("Connection"))
                 && request.getHeaderValue("Sec-WebSocket-Key") != null
                 && Optional.ofNullable(request.getHeaderValue("Sec-WebSocket-Version")).orElse("").contains("13")) {
-            byte[] response = ("HTTP/1.1 101 Switching Protocols\r\n" +
-                    "Upgrade: websocket\r\n" +
-                    "Connection: upgrade\r\n" +
-                    "Sec-WebSocket-Accept: " + getSecWebSocketAccept(request.getHeaderValue("Sec-WebSocket-Key").trim()) + "\r\n" +
-                    "\r\n").getBytes();
-            write(ByteBuffer.wrap(response), ignored -> {
-                new DefaultWebSocketConnection(DefaultWebSocketConnection.Mode.SERVER, channel, readBuffer, request, webSockethandler);
+            DefaultHttpResponse.DefaultBuilder responseBuilder = new DefaultHttpResponse.DefaultBuilder();
+            HttpResponse response = responseBuilder.version(HttpVersion.HTTP_1_1)
+                    .status(HttpStatus.STATUS_101_SWITCHING_PROTOCOLS)
+                    .header("Upgrade", "websocket")
+                    .header("Connection", "upgrade")
+                    .header("Sec-WebSocket-Accept", getSecWebSocketAccept(request.getHeaderValue("Sec-WebSocket-Key").trim()))
+                    .build();
+            String statusLine = new StringBuilder().append(response.getVersion()).append(' ').append(response.getStatusCode()).append(' ').append(response.getReasonPhrase()).toString();
+            byte[] localLine = statusLine.getBytes(StandardCharsets.US_ASCII);
+            List<byte[]> headerLines = new ArrayList<>();
+            response.getHeaders()
+                    .stream()
+                    .map(HttpHeader::getHeaderLine)
+                    .map(String::getBytes)
+                    .forEach(headerLines::add);
+            writeBuffer = ByteBuffer.allocate(localLine.length + headerLines.stream().mapToInt(array -> array.length).sum() + (headerLines.size() * 2) + 4);
+            writeBuffer.put(localLine).put(CRLF);
+            headerLines.forEach(array -> writeBuffer.put(array).put(CRLF));
+            writeBuffer.put(CRLF).flip();
+            write(writeBuffer, result -> {
+                writeBuffer = null;
+                new DefaultWebSocketConnection(channel, readBuffer, request, response, webSockethandler);
             });
             return;
         }
-
 
         handler.handle(request).whenComplete(this::onResponse);
     }

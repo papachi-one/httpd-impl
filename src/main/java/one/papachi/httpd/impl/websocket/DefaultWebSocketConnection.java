@@ -3,6 +3,7 @@ package one.papachi.httpd.impl.websocket;
 
 import one.papachi.httpd.api.http.HttpConnection;
 import one.papachi.httpd.api.http.HttpRequest;
+import one.papachi.httpd.api.http.HttpResponse;
 import one.papachi.httpd.api.websocket.WebSocketConnection;
 import one.papachi.httpd.api.websocket.WebSocketFrame;
 import one.papachi.httpd.api.websocket.WebSocketFrameListener;
@@ -20,10 +21,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
-import java.util.LinkedList;
-import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicReference;
 
 public class DefaultWebSocketConnection implements WebSocketConnection, Runnable {
 
@@ -53,17 +51,10 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
 
     protected final DefaultWebSocketSession webSocketSession;
 
-    private record WriteOperation(ByteBuffer buffer, Runnable runnable) {
-    }
-
-    protected final Queue<WriteOperation> writeQueue = new LinkedList<>();
-
-    protected final AtomicReference<Boolean> amIWriting = new AtomicReference<>(false);
-
-    public DefaultWebSocketConnection(Mode mode, AsynchronousSocketChannel channel, ByteBuffer readBuffer, HttpRequest request, WebSocketHandler handler) {
+    public DefaultWebSocketConnection(AsynchronousSocketChannel channel, ByteBuffer readBuffer, HttpRequest request, HttpResponse response, WebSocketHandler handler) {
         this.channel = channel;
         this.readBuffer = readBuffer;
-        this.webSocketSession = new DefaultWebSocketSession(request, this);
+        this.webSocketSession = new DefaultWebSocketSession(request, response, this);
         handler.handle(webSocketSession);
     }
 
@@ -293,53 +284,38 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
         return State.BREAK;
     }
 
-    public CompletableFuture<WebSocketSession> send(ByteBuffer src) {
+    public CompletableFuture<WebSocketSession> send(WebSocketStream src) {
         CompletableFuture<WebSocketSession> completableFuture = new CompletableFuture<>();
-        int length = src.remaining();
-        boolean isFin = true;
-        boolean isMask = false;
-        byte opCode = 0x02;
-        byte lengthByte;
-        byte[] lengthBytes;
-        if (length < 126) {
-            lengthByte = (byte) length;
-            lengthBytes = new byte[0];
-        } else if (length < 65536) {
-            lengthByte = 126;
-            ByteBuffer.wrap(lengthBytes = new byte[2]).putShort((short) length);
-        } else {
-            lengthByte = 127;
-            ByteBuffer.wrap(lengthBytes = new byte[8]).putLong(length);
-        }
-        byte firstByte = opCode;
-        if (isFin)
-            firstByte |= 0x80;
-        byte secondByte = lengthByte;
-        if (isMask)
-            secondByte |= 0x80;
-        ByteBuffer buffer = ByteBuffer.allocate(1 + 1 + lengthBytes.length);
-        buffer.put(firstByte).put(secondByte).put(lengthBytes).flip();
-        channel.write(buffer, buffer, new CompletionHandler<>() {
-            @Override
-            public void completed(Integer result, ByteBuffer attachment) {
-                if (attachment.hasRemaining()) {
-                    channel.write(attachment, attachment, this);
-                } else if (attachment == buffer) {
-                    channel.write(src, src, this);
-                } else {
-                    completableFuture.complete(webSocketSession);
+        ByteBuffer buffer = ByteBuffer.allocate(64 * 1024);
+        long counter = 0L;
+        try {
+            while (true) {
+                int result = src.read(buffer.clear()).get();
+                buffer.flip();
+                if (result == -1) {
+                    ByteBuffer header = getHeader(0, true, false, counter == 0 ? 0x02 : 0x00);
+                    while (header.hasRemaining()) {
+                        channel.write(header).get();
+                    }
+                    break;
+                }
+                int length = buffer.remaining();
+                ByteBuffer header = getHeader(length, false, false, counter == 0 ? 0x02 : 0x00);
+                while (header.hasRemaining()) {
+                    channel.write(header).get();
+                }
+                while (buffer.hasRemaining()) {
+                    channel.write(buffer).get();
+                    counter++;
                 }
             }
-
-            @Override
-            public void failed(Throwable exc, ByteBuffer attachment) {
-                exc.printStackTrace();
-            }
-        });
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         return completableFuture;
     }
 
-    protected ByteBuffer getHeader(int length, boolean isFin, boolean isMask, int opCode) {
+    protected ByteBuffer getHeader(long length, boolean isFin, boolean isMask, int opCode) {
         byte lengthByte;
         byte[] lengthBytes;
         if (length < 126) {
@@ -370,14 +346,14 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
                 int result = src.read(buffer.clear()).get();
                 buffer.flip();
                 if (result == -1) {
-                    ByteBuffer header = getHeader(0, true, false, counter == 0 ? 0x01 : 0x00);
+                    ByteBuffer header = getHeader(0, true, false, counter == 0 ? (src.getType() == WebSocketMessage.Type.TEXT ? 0x01 : 0x02) : 0x00);
                     while (header.hasRemaining()) {
                         channel.write(header).get();
                     }
                     break;
                 }
                 int length = buffer.remaining();
-                ByteBuffer header = getHeader(length, false, false, counter == 0 ? 0x01 : 0x00);
+                ByteBuffer header = getHeader(length, false, false, counter == 0 ? (src.getType() == WebSocketMessage.Type.TEXT ? 0x01 : 0x02) : 0x00);
                 while (header.hasRemaining()) {
                     channel.write(header).get();
                 }
@@ -394,6 +370,25 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
 
     public CompletableFuture<WebSocketSession> send(WebSocketFrame src) {
         CompletableFuture<WebSocketSession> completableFuture = new CompletableFuture<>();
+        ByteBuffer buffer = ByteBuffer.allocate(64 * 1024);
+        try {
+            ByteBuffer header = getHeader(src.getLength(), src.isFin(), src.isMasked(), src.getType().ordinal());
+            while (header.hasRemaining()) {
+                channel.write(header).get();
+            }
+            while (true) {
+                int result = src.read(buffer.clear()).get();
+                if (result == -1) {
+                    break;
+                }
+                buffer.flip();
+                while (buffer.hasRemaining()) {
+                    channel.write(buffer).get();
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         return completableFuture;
     }
 

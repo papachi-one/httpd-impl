@@ -1,19 +1,15 @@
-package one.papachi.httpd.impl.http.data;
-
+package one.papachi.httpd.impl.websocket;
 
 import one.papachi.httpd.api.http.HttpBody;
 import one.papachi.httpd.api.http.HttpHeader;
 import one.papachi.httpd.api.http.HttpHeaders;
 import one.papachi.httpd.api.http.HttpMethod;
-import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpVersion;
+import one.papachi.httpd.api.websocket.WebSocketRequest;
+import one.papachi.httpd.impl.http.data.DefaultHttpHeaders;
 
-import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
-import java.nio.channels.AsynchronousByteChannel;
-import java.nio.channels.AsynchronousFileChannel;
-import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -22,9 +18,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-public class DefaultHttpRequest implements HttpRequest {
+public class DefaultWebSocketRequest implements WebSocketRequest {
 
-    public static class DefaultBuilder implements HttpRequest.Builder {
+    public static class DefaultBuilder implements WebSocketRequest.Builder {
 
         protected InetSocketAddress server;
 
@@ -40,10 +36,6 @@ public class DefaultHttpRequest implements HttpRequest {
 
         protected final HttpHeaders.Builder headersBuilder = new DefaultHttpHeaders.DefaultBuilder();
 
-        protected final HttpBody.Builder bodyBuilder = new DefaultHttpBody.DefaultBuilder();
-
-        protected HttpBody body;
-
         @Override
         public Builder server(InetSocketAddress server) {
             this.server = server;
@@ -58,6 +50,8 @@ public class DefaultHttpRequest implements HttpRequest {
 
         @Override
         public Builder method(HttpMethod method) {
+            if (method != HttpMethod.GET)
+                throw new IllegalArgumentException();
             this.method = method;
             return this;
         }
@@ -79,6 +73,8 @@ public class DefaultHttpRequest implements HttpRequest {
 
         @Override
         public Builder version(HttpVersion version) {
+            if (version == HttpVersion.HTTP_1_0)
+                throw new IllegalArgumentException();
             this.version = version;
             return this;
         }
@@ -112,38 +108,8 @@ public class DefaultHttpRequest implements HttpRequest {
         }
 
         @Override
-        public Builder body(HttpBody body) {
-            this.body = body;
-            return this;
-        }
-
-        @Override
-        public Builder body(AsynchronousByteChannel channel) {
-            bodyBuilder.input(channel);
-            return this;
-        }
-
-        @Override
-        public Builder body(AsynchronousFileChannel channel) {
-            bodyBuilder.input(channel);
-            return this;
-        }
-
-        @Override
-        public Builder body(ReadableByteChannel channel) {
-            bodyBuilder.input(channel);
-            return this;
-        }
-
-        @Override
-        public Builder body(InputStream inputStream) {
-            bodyBuilder.input(inputStream);
-            return this;
-        }
-
-        @Override
-        public HttpRequest build() {
-            return new DefaultHttpRequest(server, scheme, method, path, version, parameters, headersBuilder.build(), body != null ? body : bodyBuilder.build());
+        public WebSocketRequest build() {
+            return new DefaultWebSocketRequest(server, scheme, method, path, version, parameters, headersBuilder.build());
         }
 
     }
@@ -162,9 +128,7 @@ public class DefaultHttpRequest implements HttpRequest {
 
     protected final HttpHeaders headers;
 
-    protected final HttpBody body;
-
-    protected DefaultHttpRequest(InetSocketAddress server, String scheme, HttpMethod method, String path, HttpVersion version, Map<String, List<String>> parameters, HttpHeaders headers, HttpBody body) {
+    protected DefaultWebSocketRequest(InetSocketAddress server, String scheme, HttpMethod method, String path, HttpVersion version, Map<String, List<String>> parameters, HttpHeaders headers) {
         this.server = server;
         this.scheme = scheme;
         this.method = method;
@@ -172,7 +136,6 @@ public class DefaultHttpRequest implements HttpRequest {
         this.version = version;
         this.parameters = parameters;
         this.headers = headers;
-        this.body = body;
     }
 
     @Override
@@ -222,7 +185,7 @@ public class DefaultHttpRequest implements HttpRequest {
 
     @Override
     public HttpBody getHttpBody() {
-        return body;
+        throw new UnsupportedOperationException();
     }
 
 }

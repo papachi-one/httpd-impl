@@ -2,13 +2,12 @@ package one.papachi.httpd.test;
 
 import one.papachi.httpd.api.http.HttpBody;
 import one.papachi.httpd.api.http.HttpHeader;
-import one.papachi.httpd.api.http.HttpMethod;
 import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpResponse;
 import one.papachi.httpd.impl.Util;
+import one.papachi.httpd.impl.http.client.DefaultHttpClient;
 import one.papachi.httpd.impl.http.data.DefaultHttpBody;
 import one.papachi.httpd.impl.http.data.DefaultHttpRequest;
-import one.papachi.httpd.impl.http.client.DefaultHttpClient;
 
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
@@ -23,13 +22,13 @@ public class HttpClientTest {
 //        client.setOption(StandardHttpOptions.TLS, one.papachi.httpd.impl.Util.getTLSClient());
         while (true) {
             DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-            builder.method(HttpMethod.POST);
+            builder.POST(new URL("http://local.papachi.one"));
             builder.header("Host", "local.papachi.one");
             builder.header("Content-Type", "application/octet-stream");
             builder.header("Content-Length", "498251");
             builder.body(new DefaultHttpBody.DefaultBuilder().input(Path.of("c:\\Users\\PC\\Downloads\\15W vs 25W.png")).build());
             HttpRequest request = builder.build();
-            HttpResponse response = client.send(new URL("http://local.papachi.one"), request).get();
+            HttpResponse response = client.send(request).get();
             System.out.println(response);
 
             System.out.println(response.getStatusCode());
@@ -53,9 +52,9 @@ public class HttpClientTest {
         DefaultHttpClient client = new DefaultHttpClient();
         while (true) {
             DefaultHttpRequest.DefaultBuilder builder = new DefaultHttpRequest.DefaultBuilder();
-            builder.header("Host", "ifconfig.io");
+            builder.GET(new URL("http://ifconfig.io"));
             HttpRequest request = builder.build();
-            HttpResponse response = client.send(new URL("http://ifconfig.io"), request).get();
+            HttpResponse response = client.send(request).get();
 
             System.out.println(response.getStatusCode());
             response.getHeaders().stream().map(HttpHeader::getHeaderLine).forEach(System.out::println);
