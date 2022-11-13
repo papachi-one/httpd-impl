@@ -1,19 +1,17 @@
 package one.papachi.httpd.test;
 
-import one.papachi.httpd.api.http.HttpBody;
 import one.papachi.httpd.api.http.HttpServer;
 import one.papachi.httpd.api.http.HttpsTLSSupplier;
 import one.papachi.httpd.api.websocket.WebSocketFrameListener;
-import one.papachi.httpd.api.websocket.WebSocketMessageListener;
+import one.papachi.httpd.api.websocket.WebSocketMessage;
 import one.papachi.httpd.api.websocket.WebSocketSession;
-import one.papachi.httpd.api.websocket.WebSocketStreamListener;
+import one.papachi.httpd.impl.Run;
 import one.papachi.httpd.impl.StandardHttpOptions;
 import one.papachi.httpd.impl.Util;
+import one.papachi.httpd.impl.websocket.DefaultWebSocketMessage;
 
 import java.net.InetSocketAddress;
-import java.net.http.WebSocket;
-import java.nio.ByteBuffer;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CompletableFuture;
 
 public class WebSocketTest {
 
@@ -30,23 +28,24 @@ public class WebSocketTest {
     }
 
     private static void handle(WebSocketSession webSocketSession) {
-        System.out.println(webSocketSession.getRequest().getPath());
-        WebSocketStreamListener streamListener = data -> System.out.println(Util.readString(data));
-        WebSocketMessageListener messageListener = data -> System.out.println(Util.readString(data));
-        WebSocketFrameListener frameListener = data -> System.out.println(Util.readString(data));
-
-        WebSocketMessageListener messageEchoListener = data -> {
-            try {
-                if (data == null) {
-                    webSocketSession.sendClose();
-                    return;
+        WebSocketFrameListener messageEchoListener = data -> {
+            CompletableFuture<Void> future = new CompletableFuture<>();
+            Run.async(() -> {
+                try {
+                    if (data == null) {
+                        webSocketSession.sendClose();
+                        future.complete(null);
+                    }
+                    byte[] bytes = Util.readBytes(data);
+                    System.out.println(new String(bytes));
+                    WebSocketMessage message = new DefaultWebSocketMessage.DefaultBuilder().type(WebSocketMessage.Type.TEXT).payload(bytes).build();
+                    webSocketSession.send(message).get();
+                    future.complete(null);
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
-                byte[] bytes = Util.readBytes(data);
-                HttpBody src = HttpBody.getBuilder().input(bytes).build();
-                webSocketSession.send(src).get();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+            });
+            return future;
         };
         webSocketSession.setListener(messageEchoListener);
     }

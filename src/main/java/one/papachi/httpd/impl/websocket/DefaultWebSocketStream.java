@@ -1,7 +1,6 @@
-package one.papachi.httpd.impl.http.data;
+package one.papachi.httpd.impl.websocket;
 
-
-import one.papachi.httpd.api.http.HttpBody;
+import one.papachi.httpd.api.websocket.WebSocketStream;
 import one.papachi.httpd.impl.net.AsynchronousInputChannel;
 
 import java.io.InputStream;
@@ -9,24 +8,12 @@ import java.nio.channels.AsynchronousByteChannel;
 import java.nio.channels.AsynchronousFileChannel;
 import java.nio.channels.ReadableByteChannel;
 
-public class DefaultHttpBody extends AsynchronousInputChannel implements HttpBody {
+public class DefaultWebSocketStream extends AsynchronousInputChannel implements WebSocketStream {
 
     public static class DefaultBuilder implements Builder {
 
         private Object object;
         private long length = Long.MAX_VALUE;
-
-        @Override
-        public Builder empty() {
-            object = null;
-            return this;
-        }
-
-        @Override
-        public Builder length(long length) {
-            this.length = length;
-            return this;
-        }
 
         @Override
         public Builder input(AsynchronousByteChannel channel) {
@@ -53,18 +40,13 @@ public class DefaultHttpBody extends AsynchronousInputChannel implements HttpBod
         }
 
         @Override
-        public HttpBody build() {
-            return new DefaultHttpBody(object, length);
+        public WebSocketStream build() {
+            return new DefaultWebSocketStream(object, length);
         }
     }
 
-    DefaultHttpBody(Object input, long length) {
+    DefaultWebSocketStream(Object input, long length) {
         super(input, length);
-    }
-
-    @Override
-    public boolean isPresent() {
-        return input != null;
     }
 
 }

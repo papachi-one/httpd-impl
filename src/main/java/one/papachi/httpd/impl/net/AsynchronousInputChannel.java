@@ -14,7 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class AsynchronousInputByteChannel implements AsynchronousByteChannel {
+public class AsynchronousInputChannel implements AsynchronousByteChannel {
 
     protected final Object input;
     protected final AtomicLong counter = new AtomicLong();
@@ -22,11 +22,11 @@ public class AsynchronousInputByteChannel implements AsynchronousByteChannel {
     protected volatile boolean isClosed;
     protected final CompletionHandler<Integer, PendingReadOperation<?>> completionHandler;
 
-    public AsynchronousInputByteChannel(Object input) {
+    public AsynchronousInputChannel(Object input) {
         this(input, Long.MAX_VALUE);
     }
 
-    public AsynchronousInputByteChannel(Object input, Long maxLength) {
+    public AsynchronousInputChannel(Object input, Long maxLength) {
         this.input = input;
         this.maxLength = maxLength;
         this.isClosed = input == null;

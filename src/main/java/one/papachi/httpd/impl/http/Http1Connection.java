@@ -8,6 +8,7 @@ import one.papachi.httpd.impl.CustomDataBuffer;
 import one.papachi.httpd.impl.Run;
 import one.papachi.httpd.impl.StandardHttpOptions;
 import one.papachi.httpd.impl.http.data.DefaultHttpHeaders;
+import one.papachi.httpd.impl.net.TransferAsynchronousByteChannel;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -42,7 +43,7 @@ public abstract class Http1Connection implements Runnable {
     protected volatile String remoteLine;
     protected volatile HttpHeaders.Builder remoteHeadersBuilder;
     protected volatile HttpHeaders remoteHeaders;
-    protected volatile Http1RemoteBodyChannel remoteBodyChannel;
+    protected volatile TransferAsynchronousByteChannel remoteBodyChannel;
     protected volatile HttpBody remoteBody;
     protected volatile boolean isLocalBodyChunked;
     protected volatile long localBodyLengthCounter;
@@ -225,17 +226,32 @@ public abstract class Http1Connection implements Runnable {
     protected State readRemoteBody() {
         if ((readBuffer.hasRemaining() && counter < length) || (isChunked && length == 0) || (!isChunked && counter == length) || (readBuffer.hasRemaining() && readRemoteBodyUntilEos) || isEos) {
             if ((isChunked && length == 0) || (!isChunked && counter == length) || isEos) {
-                remoteBodyChannel.closeInbound();
-            } else if (readRemoteBodyUntilEos) {
-                remoteBodyChannel.put(readBuffer);
+                try {
+                    remoteBodyChannel.close();
+                } catch (IOException ignored) {
+                }
+                return State.BREAK;
+            }
+            ByteBuffer buffer;
+            if (readRemoteBodyUntilEos) {
+                buffer = readBuffer;
             } else {
                 int size = (int) Math.min(length - counter, readBuffer.remaining());
                 counter += size;
-                ByteBuffer buffer = readBuffer.duplicate();
+                buffer = readBuffer.duplicate();
                 buffer.limit(buffer.position() + size);
                 readBuffer.position(readBuffer.position() + size);
-                remoteBodyChannel.put(buffer);
             }
+            remoteBodyChannel.write(buffer, null, new CompletionHandler<Integer, Void>() {
+                @Override
+                public void completed(Integer result, Void attachment) {
+                    run(State.READ_REMOTE_BODY);
+                }
+                @Override
+                public void failed(Throwable exc, Void attachment) {
+                    run(State.ERROR);
+                }
+            });
             return State.BREAK;
         }
         resumeState = State.READ_REMOTE_BODY;

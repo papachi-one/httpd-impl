@@ -171,7 +171,8 @@ public class Util {
         ByteArrayOutputStream os = new ByteArrayOutputStream();
         try {
             ByteBuffer buffer = ByteBuffer.allocate(8 * 1024);
-            while ((channel.read(buffer.clear()).get()) != -1) {
+            int result;
+            while ((result = channel.read(buffer.clear()).get()) != -1) {
                 buffer.flip();
                 os.write(buffer.array(), buffer.arrayOffset() + buffer.position(), buffer.remaining());
             }

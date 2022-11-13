@@ -7,17 +7,20 @@ import one.papachi.httpd.api.websocket.WebSocketConnection;
 import one.papachi.httpd.api.websocket.WebSocketFrame;
 import one.papachi.httpd.api.websocket.WebSocketFrameListener;
 import one.papachi.httpd.api.websocket.WebSocketHandler;
+import one.papachi.httpd.api.websocket.WebSocketListener;
+import one.papachi.httpd.api.websocket.WebSocketMessage;
 import one.papachi.httpd.api.websocket.WebSocketMessageListener;
 import one.papachi.httpd.api.websocket.WebSocketSession;
+import one.papachi.httpd.api.websocket.WebSocketStream;
 import one.papachi.httpd.api.websocket.WebSocketStreamListener;
 import one.papachi.httpd.impl.Run;
+import one.papachi.httpd.impl.net.TransferAsynchronousByteChannel;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.channels.AsynchronousByteChannel;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
 import java.util.LinkedList;
-import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
@@ -129,14 +132,10 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
         return State.READ_FIRST_BYTE;
     }
 
-    enum OpCode {
-        CONTINUATION_FRAME, TEXT_FRAME, BINARY_FRAME, NON_CONTROL_FRAME_3, NON_CONTROL_FRAME_4, NON_CONTROL_FRAME_5, NON_CONTROL_FRAME_6, NON_CONTROL_FRAME_7, CONNECTION_CLOSE, PING_FRAME, PONG_FRAME, CONTROL_FRAME_B, CONTROL_FRAME_C, CONTROL_FRAME_D, CONTROL_FRAME_E, CONTROL_FRAME_F
-    }
-
     protected volatile boolean isFin, isReserved1, isReserved2, isReserved3, isMask;
-    protected volatile OpCode opCode;
+    protected volatile WebSocketFrame.Type type;
     protected volatile long counter, length;
-    protected volatile byte[] mask;
+    protected volatile byte[] maskingKey;
 
     protected State readFirstByte() {
         if (readBuffer.hasRemaining()) {
@@ -145,7 +144,7 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
             this.isReserved1 = (b & 0x40) != 0;
             this.isReserved2 = (b & 0x20) != 0;
             this.isReserved3 = (b & 0x10) != 0;
-            this.opCode = OpCode.values()[b & 0xF];
+            this.type = WebSocketFrame.Type.values()[b & 0xF];
             return State.READ_SECOND_BYTE;
         }
         resumeState = State.READ_FIRST_BYTE;
@@ -176,44 +175,96 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
 
     protected State readMask() {
         if (readBuffer.remaining() >= 4) {
-            mask = new byte[]{readBuffer.get(), readBuffer.get(), readBuffer.get(), readBuffer.get()};
+            maskingKey = new byte[]{readBuffer.get(), readBuffer.get(), readBuffer.get(), readBuffer.get()};
             return State.PROCESS_FRAME;
         }
         resumeState = State.READ_MASK;
         return State.READ;
     }
 
-    protected volatile DefaultWebSocketRemoteFrame frame;
-
-    protected volatile WebSocketRemoteDataChannel dataChannel;
+    protected volatile WebSocketFrame frame;
+    protected volatile WebSocketMessage message;
+    protected volatile WebSocketStream stream;
+    protected volatile TransferAsynchronousByteChannel dataChannel;
 
     protected State processFrame() {
-        frame = new DefaultWebSocketRemoteFrame(isFin, isMask, WebSocketFrame.Type.values()[opCode.ordinal()], length, mask, dataChannel = new WebSocketRemoteDataChannel(mask, () -> run(State.READ_PAYLOAD)));
-        if ((opCode == OpCode.TEXT_FRAME || opCode == OpCode.BINARY_FRAME) && webSocketSession.getListener() instanceof WebSocketFrameListener handler) {
-            handler.onFrame(frame);
-            return State.BREAK;
-        }
-        return switch (opCode) {
-            case TEXT_FRAME, BINARY_FRAME -> textBinaryFrame();
-            case CONTINUATION_FRAME -> continuationFrame();
-            case PING_FRAME -> pingFrame();
-            case CONNECTION_CLOSE -> connectionCloseFrame();
+
+        return switch (type) {
+            case TEXT_FRAME, BINARY_FRAME, CONTINUATION_FRAME -> {
+                WebSocketListener listener = webSocketSession.getListener();
+                if (listener instanceof WebSocketFrameListener frameListener) {
+                    if (type != WebSocketFrame.Type.CONTINUATION_FRAME) {
+                        dataChannel = new TransferAsynchronousByteChannel();
+                        DefaultWebSocketFrame.DefaultBuilder builder = new DefaultWebSocketFrame.DefaultBuilder();
+                        frame = builder.fin(isFin)
+                                .mask(isMask)
+                                .maskingKey(maskingKey)
+                                .length(length)
+                                .type(type)
+                                .payload(dataChannel)
+                                .build();
+                        Run.async(() -> frameListener.onFrame(frame).thenRun(() -> run(State.READ_FRAME)));
+                    }
+                } else if (listener instanceof WebSocketMessageListener messageListener) {
+                    if (type != WebSocketFrame.Type.CONTINUATION_FRAME) {
+                        dataChannel = new TransferAsynchronousByteChannel();
+                        DefaultWebSocketMessage.DefaultBuilder builder = new DefaultWebSocketMessage.DefaultBuilder();
+                        message = builder.type(type == WebSocketFrame.Type.TEXT_FRAME ? WebSocketMessage.Type.TEXT : WebSocketMessage.Type.BINARY)
+                                .payload(dataChannel)
+                                .build();
+                        Run.async(() -> messageListener.onMessage(message).thenRun(() -> run(State.READ_FRAME)));
+                    }
+                } else if (listener instanceof WebSocketStreamListener streamListener) {
+                    if (dataChannel == null) {
+                        dataChannel = new TransferAsynchronousByteChannel();
+                        DefaultWebSocketStream.DefaultBuilder builder = new DefaultWebSocketStream.DefaultBuilder();
+                        stream = builder.input(dataChannel).build();
+                        Run.async(() -> streamListener.onStream(stream));
+                    }
+                }
+                yield State.READ_PAYLOAD;
+            }
+            case PING_FRAME, PONG_FRAME -> {
+                yield State.SKIP_PAYLOAD;
+            }
+            case CONNECTION_CLOSE -> {
+                yield State.SKIP_PAYLOAD;
+            }
             default -> State.SKIP_PAYLOAD;
         };
     }
 
     protected State readPayload() {
         if (counter == length) {
-            dataChannel.closeInbound();
-            return State.READ_FRAME;
+            try {
+                dataChannel.close();
+            } catch (IOException ignored) {
+            }
+            return State.BREAK;
         } else if (readBuffer.hasRemaining() && counter < length) {
             long lSize = (length - counter);
             int size = (int) Math.min(lSize, readBuffer.remaining());
-            counter += size;
-            ByteBuffer duplicate = readBuffer.duplicate();
-            duplicate.limit(duplicate.position() + size);
+            ByteBuffer buffer = readBuffer.duplicate();
+            buffer.limit(buffer.position() + size);
             readBuffer.position(readBuffer.position() + size);
-            dataChannel.put(duplicate);
+            if (isMask) {
+                for (int c = 0; c < buffer.remaining(); c++) {
+                    int i = buffer.get(buffer.position() + c) & 0xFF;
+                    i = i ^ maskingKey[(int) (this.counter++ & 3L)];
+                    byte b = (byte) i;
+                    buffer.put(buffer.position() + c, b);
+                }
+            }
+            dataChannel.write(buffer, null, new CompletionHandler<Integer, Void>() {
+                @Override
+                public void completed(Integer result, Void attachment) {
+                    run(State.READ_PAYLOAD);
+                }
+                @Override
+                public void failed(Throwable exc, Void attachment) {
+                    run(State.ERROR);
+                }
+            });
             return State.BREAK;
         }
         resumeState = State.READ_PAYLOAD;
@@ -231,36 +282,8 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
         return State.READ;
     }
 
-    protected volatile DefaultWebSocketRemoteMessage message;
-
-    protected volatile DefaultWebSocketRemoteStream stream;
-
-    protected State textBinaryFrame() {
-        message = new DefaultWebSocketRemoteMessage(frame);
-        if (stream == null) {
-            stream = new DefaultWebSocketRemoteStream();
-            if (webSocketSession.getListener() instanceof WebSocketStreamListener handler) {
-                Run.async(() -> handler.onStream(stream));
-            }
-        }
-        if (webSocketSession.getListener() instanceof WebSocketMessageListener handler) {
-            Run.async(() -> handler.onMessage(message));
-        }
-        stream.put(message);
-        return State.BREAK;
-    }
-
-    protected State continuationFrame() {
-        message.put(frame);
-        return State.BREAK;
-    }
-
-    protected State pingFrame() {
-        return State.READ_FRAME;
-    }
 
     protected State connectionCloseFrame() {
-        Optional.ofNullable(stream).ifPresent(DefaultWebSocketRemoteStream::closeInbound);
         if (webSocketSession.getListener() instanceof WebSocketFrameListener handler) {
             Run.async(() -> handler.onFrame(null));
         }
@@ -316,7 +339,29 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
         return completableFuture;
     }
 
-    public CompletableFuture<WebSocketSession> send(AsynchronousByteChannel src) {
+    protected ByteBuffer getHeader(int length, boolean isFin, boolean isMask, int opCode) {
+        byte lengthByte;
+        byte[] lengthBytes;
+        if (length < 126) {
+            lengthByte = (byte) length;
+            lengthBytes = new byte[0];
+        } else if (length < 65536) {
+            lengthByte = 126;
+            ByteBuffer.wrap(lengthBytes = new byte[2]).putShort((short) length);
+        } else {
+            lengthByte = 127;
+            ByteBuffer.wrap(lengthBytes = new byte[8]).putLong(length);
+        }
+        byte firstByte = (byte) (opCode & 0xFF);
+        if (isFin)
+            firstByte |= 0x80;
+        byte secondByte = lengthByte;
+        if (isMask)
+            secondByte |= 0x80;
+        return ByteBuffer.allocate(2 + lengthBytes.length).put(firstByte).put(secondByte).put(lengthBytes).flip();
+    }
+
+    public CompletableFuture<WebSocketSession> send(WebSocketMessage src) {
         CompletableFuture<WebSocketSession> completableFuture = new CompletableFuture<>();
         ByteBuffer buffer = ByteBuffer.allocate(64 * 1024);
         long counter = 0L;
@@ -325,63 +370,20 @@ public class DefaultWebSocketConnection implements WebSocketConnection, Runnable
                 int result = src.read(buffer.clear()).get();
                 buffer.flip();
                 if (result == -1) {
-                    int length = 0;
-                    boolean isFin = true;
-                    boolean isMask = false;
-                    byte opCode = 0x00;
-                    byte lengthByte;
-                    byte[] lengthBytes;
-                    if (length < 126) {
-                        lengthByte = (byte) length;
-                        lengthBytes = new byte[0];
-                    } else if (length < 65536) {
-                        lengthByte = 126;
-                        ByteBuffer.wrap(lengthBytes = new byte[2]).putShort((short) length);
-                    } else {
-                        lengthByte = 127;
-                        ByteBuffer.wrap(lengthBytes = new byte[8]).putLong(length);
-                    }
-                    byte firstByte = opCode;
-                    if (isFin)
-                        firstByte |= 0x80;
-                    byte secondByte = lengthByte;
-                    if (isMask)
-                        secondByte |= 0x80;
-                    buffer.clear().put(firstByte).put(secondByte).put(lengthBytes).flip();
-                    while (buffer.hasRemaining()) {
-                        channel.write(buffer).get();
+                    ByteBuffer header = getHeader(0, true, false, counter == 0 ? 0x01 : 0x00);
+                    while (header.hasRemaining()) {
+                        channel.write(header).get();
                     }
                     break;
                 }
                 int length = buffer.remaining();
-                boolean isFin = false;
-                boolean isMask = false;
-                byte opCode = (byte) (counter == 0 ? 0x01 : 0x00);
-                byte lengthByte;
-                byte[] lengthBytes;
-                if (length < 126) {
-                    lengthByte = (byte) length;
-                    lengthBytes = new byte[0];
-                } else if (length < 65536) {
-                    lengthByte = 126;
-                    ByteBuffer.wrap(lengthBytes = new byte[2]).putShort((short) length);
-                } else {
-                    lengthByte = 127;
-                    ByteBuffer.wrap(lengthBytes = new byte[8]).putLong(length);
-                }
-                byte firstByte = opCode;
-                if (isFin)
-                    firstByte |= 0x80;
-                byte secondByte = lengthByte;
-                if (isMask)
-                    secondByte |= 0x80;
-                ByteBuffer header = ByteBuffer.allocate(1 + 1 + lengthBytes.length);
-                header.clear().put(firstByte).put(secondByte).put(lengthBytes).flip();
+                ByteBuffer header = getHeader(length, false, false, counter == 0 ? 0x01 : 0x00);
                 while (header.hasRemaining()) {
                     channel.write(header).get();
                 }
                 while (buffer.hasRemaining()) {
                     channel.write(buffer).get();
+                    counter++;
                 }
             }
         } catch (Exception e) {

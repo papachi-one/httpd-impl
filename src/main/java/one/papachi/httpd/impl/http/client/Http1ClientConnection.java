@@ -6,11 +6,11 @@ import one.papachi.httpd.api.http.HttpMethod;
 import one.papachi.httpd.api.http.HttpRequest;
 import one.papachi.httpd.api.http.HttpResponse;
 import one.papachi.httpd.api.http.HttpVersion;
+import one.papachi.httpd.impl.http.Http1Connection;
 import one.papachi.httpd.impl.http.data.DefaultHttpBody;
 import one.papachi.httpd.impl.http.data.DefaultHttpHeader;
 import one.papachi.httpd.impl.http.data.DefaultHttpResponse;
-import one.papachi.httpd.impl.http.Http1Connection;
-import one.papachi.httpd.impl.http.Http1RemoteBodyChannel;
+import one.papachi.httpd.impl.net.TransferAsynchronousByteChannel;
 
 import java.nio.channels.AsynchronousSocketChannel;
 import java.util.ArrayList;
@@ -85,7 +85,8 @@ public class Http1ClientConnection extends Http1Connection implements HttpClient
         } else {
             readRemoteBodyUntilEos = true;
         }
-        remoteBody = new DefaultHttpBody.DefaultBuilder().input(hasRemoteBody ? (remoteBodyChannel = new Http1RemoteBodyChannel(() -> run(State.READ_REMOTE_BODY))) : null).build();
+        remoteBody = new DefaultHttpBody.DefaultBuilder().input(hasRemoteBody ? (remoteBodyChannel = new TransferAsynchronousByteChannel()) : null).build();
+        run(State.READ_REMOTE_BODY);
 
         builder.body(remoteBody);
         response = builder.build();

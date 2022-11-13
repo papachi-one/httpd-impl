@@ -7,13 +7,10 @@ import one.papachi.httpd.api.websocket.WebSocketListener;
 import one.papachi.httpd.api.websocket.WebSocketMessage;
 import one.papachi.httpd.api.websocket.WebSocketSession;
 import one.papachi.httpd.impl.Run;
-import one.papachi.httpd.impl.net.GenericCompletionHandler;
 
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousByteChannel;
-import java.nio.channels.CompletionHandler;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Future;
 
 public class DefaultWebSocketSession implements WebSocketSession {
 
@@ -37,16 +34,17 @@ public class DefaultWebSocketSession implements WebSocketSession {
     }
 
     @Override
-    public void setListener(WebSocketListener handler) {
+    public WebSocketSession setListener(WebSocketListener handler) {
         if (this.handler != null)
             throw new IllegalStateException();
         this.handler = handler;
         Run.async(webSocketConnection);
+        return this;
     }
 
     @Override
-    public void sendClose() {
-
+    public CompletableFuture<WebSocketSession> sendClose() {
+        return null;
     }
 
     @Override
@@ -55,7 +53,7 @@ public class DefaultWebSocketSession implements WebSocketSession {
     }
 
     @Override
-    public CompletableFuture<WebSocketSession> send(AsynchronousByteChannel src) {
+    public CompletableFuture<WebSocketSession> send(WebSocketMessage src) {
         return webSocketConnection.send(src);
     }
 
